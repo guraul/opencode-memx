@@ -1,0 +1,38 @@
+{
+  "title": "Conversation with explicit user preferences",
+  "description": "Simulates user messages containing explicit preference keywords like '以后都', '记住', '我喜欢'",
+  "messages": [
+    {
+      "role": "user",
+      "content": "以后都用 pnpm 安装依赖，别用 npm 了"
+    },
+    {
+      "role": "assistant",
+      "content": "好的，以后我会使用 pnpm 来安装依赖。"
+    },
+    {
+      "role": "user",
+      "content": "记住，我不喜欢代码注释里用 Emoji，太不专业了"
+    },
+    {
+      "role": "assistant",
+      "content": "明白，我会避免在代码注释中使用 Emoji。"
+    },
+    {
+      "role": "user",
+      "content": "直接给改好的完整代码就行，别分步骤解释"
+    },
+    {
+      "role": "assistant",
+      "content": "好的，直接上完整代码。"
+    },
+    {
+      "role": "user",
+      "content": "我偏好先给结论再展开，别绕弯子"
+    },
+    {
+      "role": "assistant",
+      "content": "结论先行，明白了。"
+    }
+  ]
+}

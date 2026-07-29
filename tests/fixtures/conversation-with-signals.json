@@ -1,0 +1,22 @@
+{
+  "title": "Conversation with STYLE_SIGNAL tags",
+  "description": "Simulates an AI response that includes embedded STYLE_SIGNAL HTML comments",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Can you refactor this component to use composition API?"
+    },
+    {
+      "role": "assistant",
+      "content": "Here's the refactored component using Composition API:\n\n```vue\n<script setup lang=\"ts\">\nimport { ref, computed } from 'vue'\n\nconst count = ref(0)\nconst double = computed(() => count.value * 2)\n</script>\n```\n\n<!-- STYLE_SIGNAL: {\"category\": \"architecture\", \"content\": \"偏好 Vue Composition API 而非 Options API\", \"evidence\": \"用户主动要求将组件重构为 Composition API\", \"confidence\": \"high\", \"source\": \"explicit\"} -->\n\nLet me know if you need any adjustments!"
+    },
+    {
+      "role": "user",
+      "content": "Looks good, but can you also add TypeScript types?"
+    },
+    {
+      "role": "assistant",
+      "content": "Sure! Here's with proper typing:\n\n```typescript\ninterface UseCounterReturn {\n  count: Ref<number>\n  double: ComputedRef<number>\n  increment: () => void\n}\n```\n\n<!-- STYLE_SIGNAL: {\"category\": \"communication\", \"content\": \"偏好类型安全的代码示例\", \"evidence\": \"用户要求在重构基础上增加 TypeScript 类型\", \"confidence\": \"medium\", \"source\": \"implicit_correction\"} -->"
+    }
+  ]
+}

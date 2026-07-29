@@ -1,0 +1,55 @@
+{
+  "name": "opencode-memx",
+  "version": "0.1.0",
+  "description": "User style memory plugin for OpenCode V2 — extracts and persists cross-session preferences",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "memory",
+    "user-style"
+  ],
+  "license": "MIT",
+  "files": [
+    "src/"
+  ],
+  "opencode": {
+    "type": "plugin",
+    "hooks": [
+      "session.start",
+      "message.complete",
+      "session.idle"
+    ],
+    "tools": [
+      "reflect",
+      "edit_user_style"
+    ]
+  },
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/guraul/opencode-memx.git"
+  },
+  "author": "",
+  "bugs": {
+    "url": "https://github.com/guraul/opencode-memx/issues"
+  },
+  "homepage": "https://github.com/guraul/opencode-memx#readme",
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

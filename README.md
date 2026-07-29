@@ -1,59 +1,70 @@
 # opencode-memx
 
-User style memory plugin for OpenCode V2. Extracts cross-session user preferences from conversation history and persists them to `~/.opencode/USER.md`.
+OpenCode V2 用户风格记忆插件。从对话历史中自动提炼跨会话的用户偏好，经你确认后持久化到 `~/.opencode/USER.md`。
 
-## Design Philosophy
+## 设计哲学
 
-`opencode-memx` is built on the insight that **user preferences (User Style) and project facts (Memory) are fundamentally different memory types**. User Style is a cross-project slow-variable profile that needs dialectical refinement and human confirmation; Memory is a project-bound fast-variable log that needs real-time capture and automatic archiving. This plugin focuses on the former.
+> 详见 [`muse.md`](muse.md) — 设计灵感、开源参考与决策溯源完整记录。
 
-Inspired by Honcho's dialectical reasoning, Mem0's deduplication, and OpenClaw's lifecycle management — implemented as a zero-external-dependency OpenCode V2 plugin.
+`opencode-memx` 基于一个核心洞察：**用户偏好（User Style）和项目事实（Memory）是两种截然不同的记忆类型**。前者是跨项目的慢变量画像，需要辩证提炼和人类确认；后者是项目绑定的快变量日志，需要实时捕获和自动归档。本插件专注于前者。
 
-## Architecture: Three-Stage Pipeline
+借鉴了 **Honcho** 的辩证推理、**Mem0** 的去重机制、**OpenClaw** 的生命周期管理，在 OpenCode V2 Plugin API 上实现了零外部依赖、人类可控的风格记忆系统。
+
+### 关键设计决策
+
+| 决策 | 理由 |
+| :--- | :--- |
+| **必须人类确认** | User Style 一旦记错会导致后续所有会话体验降级，且难以察觉 |
+| **Stage 1 禁止调 LLM** | `message.complete` 每轮触发，纯正则匹配耗时 < 5ms，LLM 仅在空闲时批量调用 |
+| **USER.md 限 200 行** | 过长会挤占 System Prompt 空间，超限自动压缩 |
+| **命名 `memx`** | 保留 memory 语义，暗示扩展（extension），为 Memory.md 轨道预留命名空间 |
+
+## 三阶段管道
 
 ```
-[Stage 1: Signal Capture] → [Stage 2: Batch Refinement] → [Stage 3: Human Confirmation]
-  message.complete hook       session.idle hook             TUI confirm dialog
-      │                           │                              │
-  regex scanning             LLM dialectical                proposal display
-  (no LLM, <5ms)             refinement                    user Y/N choice
-      │                           │                              ↓
-  memory buffer              confidence filter              atomic write
-  (max 20 signals)           + dedup                        to ~/.opencode/USER.md
+[信号捕获]      →    [批处理提炼]       →   [人类确认]
+message.complete     session.idle           TUI 确认弹窗
+     │                     │                     │
+ 正则扫描             LLM 辩证提炼          提议列表展示
+ (无 LLM, <5ms)       + USER.md 比对         Y/N 选择
+     │                + 低置信度过滤              ↓
+ 内存缓冲区              增量 Patch             原子写入
+ (上限 20 条)                                    ~/.opencode/USER.md
 ```
 
-## Installation
+## 安装
 
-1. Clone or download this repository into your OpenCode plugins directory:
-   ```bash
-   git clone <repo-url> /path/to/opencode-memx
-   cd /path/to/opencode-memx
-   npm install
-   ```
+```bash
+git clone <仓库地址> /path/to/opencode-memx
+cd /path/to/opencode-memx
+npm install
+```
 
-2. Register the plugin in your OpenCode config (see `.opencode-example/opencode.jsonc`):
-   ```json
-   {
-     "plugins": {
-       "opencode-memx": {
-         "path": "/path/to/opencode-memx"
-       }
-     }
-   }
-   ```
+在 OpenCode 配置中注册插件（参考 `.opencode-example/opencode.jsonc`）：
 
-## Configuration
+```json
+{
+  "plugins": {
+    "opencode-memx": {
+      "path": "/path/to/opencode-memx"
+    }
+  }
+}
+```
 
-Plugin behavior can be customized via `pluginConfig.opencode-memx` in your OpenCode config:
+## 配置
 
-| Field | Type | Default | Description |
+通过 `pluginConfig.opencode-memx` 自定义插件行为：
+
+| 字段 | 类型 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `refinementModel` | `string` | *(default model)* | Model to use for LLM refinement calls. If omitted, OpenCode's default model is used. Example: `"deepseek-v4-flash"` |
-| `maxBufferSize` | `number` | `20` | Max signals per session buffer |
-| `maxLineLimit` | `number` | `200` | Max USER.md lines before compression |
-| `temperature` | `number` | `0.2` | LLM temperature for refinement |
-| `maxTokens` | `number` | `1024` | Max tokens per refinement call |
+| `refinementModel` | `string` | 默认模型 | 提炼阶段使用的模型，如 `"deepseek-v4-flash"`。不传则使用 OpenCode 默认模型 |
+| `maxBufferSize` | `number` | `20` | 单会话信号缓冲区上限 |
+| `maxLineLimit` | `number` | `200` | USER.md 行数上限，超限自动压缩 |
+| `temperature` | `number` | `0.2` | LLM 温度参数 |
+| `maxTokens` | `number` | `1024` | 单次提炼最大 token 数 |
 
-Example:
+示例：
 
 ```json
 {
@@ -65,9 +76,9 @@ Example:
 }
 ```
 
-## USER.md Format
+## USER.md 格式
 
-The plugin manages `~/.opencode/USER.md` with the following structure:
+插件管理的用户风格文件位于 `~/.opencode/USER.md`：
 
 ```markdown
 # User Profile & Style
@@ -88,40 +99,33 @@ The plugin manages `~/.opencode/USER.md` with the following structure:
 - ~~[2026-07-15] 偏好 Vue 3 Composition API~~ (Deprecated: 已迁移至 Svelte)
 ```
 
-**Format rules:**
-- Each entry starts with `- [YYYY-MM-DD]`
-- Deprecated entries use `~~strikethrough~~` (not physically deleted)
-- Four fixed section headers (no custom sections)
-- Hard limit: 200 lines (auto-compression on overflow)
+**格式规则：**
+- 每条以 `- [YYYY-MM-DD]` 开头
+- 废弃条目用 `~~删除线~~` 标记，不物理删除
+- 四个固定分类标题，不可新增
+- 硬限制 200 行，超限自动压缩
 
-## Commands
-
-Two tools are exposed to the user:
+## 命令
 
 ### `reflect`
-Manually trigger style refinement (useful when `session.idle` doesn't fire automatically).
+手动触发风格提炼（`session.idle` 未自动触发时使用）。
 
 ### `edit_user_style`
-Manually add or deprecate a style entry.
+手动添加或废弃一条条目。
 
-Parameters:
+参数：
 - `category`: `"communication" | "toolchain" | "architecture" | "pitfall"`
-- `content`: Entry text (max 100 characters)
-- `action`: `"append"` (default) or `"deprecate"`
+- `content`: 条目内容（最多 100 字）
+- `action`: `"append"`（默认）或 `"deprecate"`
 
-## Development
+## 开发
 
 ```bash
-# Install dependencies
-npm install
-
-# Run tests
-npm test
-
-# Type check
-npm run typecheck
+npm install       # 安装依赖
+npm test          # 运行测试
+npm run typecheck # 类型检查
 ```
 
-## License
+## 协议
 
 MIT

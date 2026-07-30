@@ -1,15 +1,38 @@
-# 📋 OpenCode Plugin PRD: `opencode-memx` (User Style MVP)
+# 📋 OpenCode Plugin PRD: `opencode-memx` (User Style MVP) - Final Spec
 
-## 1. 产品定位与边界
+> **文档性质**: 最终开发规格说明书 / README 核心素材库
+> **版本**: v2.1-final (Silent Autonomy + Defensive Engineering)
+> **状态**: Ready for Implementation
+
+## 1. 产品定位与设计溯源
+
+### 1.1 核心目标与边界
 -   **产品名称**: `opencode-memx`
 -   **运行环境**: OpenCode V2 Plugin API (TypeScript / Bun)
--   **核心目标**: 在会话结束时，自动从对话历史中提炼用户的长期交互偏好，持久化到 `~/.opencode/USER.md`。
+-   **核心目标**: 在会话空闲时，自动从对话历史中提炼用户的长期交互偏好，以结构化 Markdown 形式**静默持久化**到 `~/.opencode/USER.md`。
 -   **严格边界 (Non-Goals)**:
-    -   ❌ **不存储**项目事实、环境配置、任务状态（这些属于 Memory.md 范畴，不在本 MVP 范围内）。
+    -   ❌ **不存储**项目事实、环境配置、任务状态（属于 Memory.md 范畴）。
     -   ❌ **不依赖**外部向量数据库或独立 API 服务（纯本地文件系统 + LLM API）。
     -   ❌ **不修改**主对话 Context（提炼过程使用独立的后台 LLM 调用）。
+    -   ❌ **不进行**任何 TUI 交互确认（零阻塞，信任设计）。
 
-## 2. 核心架构：双阶段管道
+### 1.2 设计决策：为什么选择“静默自治”？
+-   **确认疲劳**: 用户偏好形成是高频微小的，弹窗确认会导致无脑批准，机制形同虚设。
+-   **心流保护**: `session.idle` 利用空闲时间，若因确认而阻塞，后台任务变为前台干扰。
+-   **编辑即确认**: 开发者对配置文件的预期是“可直接编辑”，文件本身就是最好的 UI。
+-   **安全替代**: 通过原子写入 + 5版本备份轮转 + Zod 强校验替代人工审核，提供比 TUI 更强的后悔药。
+
+### 1.3 开源实现移植矩阵
+| 参考项目 | 核心资产 | 在本插件中的具体落地 |
+| :--- | :--- | :--- |
+| **Honcho** | Dialectical Reasoning Prompt | `REFINEMENT_SYSTEM_PROMPT` 中强制 "Cross-Project Applicability Test" |
+| **Claude Code** | 200-Line Limit + Deprecation Syntax | 解析器硬编码上限；废弃条目用 `~~[date] content~~` |
+| **Mem0** | Semantic Deduplication Logic | Refinement Prompt 输出 `action: "update"` 而非盲目 `"append"` |
+| **OpenClaw** | Time Decay Metadata | 每条记录前缀 `[YYYY-MM-DD]`；预留 `last_accessed` 字段 |
+
+---
+
+## 2. 核心架构：双阶段异步管道
 
 ```text
 [Stage 1: Signal Capture]       [Stage 2: Batch Refinement + Persist]
@@ -18,18 +41,18 @@
   轻量正则扫描 ──────────────→  后台LLM辩证提炼
   STYLE_SIGNAL标签              + 现有USER.md比对
   显式偏好关键词                + 增量Patch生成
-        │                       + 写入前自动备份
-  内存缓冲区(signals[])         + 原子写入 + 备份轮转(保留5版)
-        │                                │
+        │                       + Zod Runtime Validation
+  内存缓冲区(signals[])         + 原子写入(.tmp+rename)
+        │                       + 备份轮转(保留5版)
         ↓                                ↓
-  捕获信号存入缓冲区           console.log 输出结果 + 清空缓冲区
+  捕获信号存入缓冲区           分级日志输出 + 清空缓冲区
 ```
+
+---
 
 ## 3. 数据契约
 
 ### 3.1 USER.md 格式规范
-插件必须严格遵守以下 Markdown 结构，不可自由发挥：
-
 ```markdown
 # User Profile & Style
 
@@ -55,10 +78,9 @@
 -   每条记忆必须以 `- [YYYY-MM-DD] ` 开头
 -   废弃条目使用 `~~删除线~~` 标记，**不物理删除**
 -   分类标题固定为上述四个 `##`，不可新增
--   文件总行数硬限制：**200 行**。超限时触发压缩（见 §4.4）
+-   文件总有效行数硬限制：**200 行**。超限时触发压缩（见 §4.4）
 
 ### 3.2 风格信号数据结构 (内存缓冲区)
-
 ```typescript
 interface StyleSignal {
   category: "communication" | "toolchain" | "architecture" | "pitfall";
@@ -69,17 +91,24 @@ interface StyleSignal {
 }
 ```
 
-### 3.3 写入提议数据结构 (LLM输出)
-
+### 3.3 写入提议数据结构 (LLM输出 + Zod Schema)
 ```typescript
-interface StyleProposal {
-  action: "append" | "update" | "deprecate";
-  category: string;       // 对应 USER.md 的 ## 标题
-  content: string;        // 新条目内容
-  target_line?: number;   // action=update/deprecate 时，指定原条目行号
-  reason: string;         // 向用户展示的变更理由（≤50字）
-}
+import { z } from "zod";
+
+export const refinementResponseSchema = z.object({
+  actions: z.array(z.object({
+    type: z.enum(["append", "update", "deprecate"]),
+    category: z.enum(["Communication", "Coding", "Reasoning", "Tooling"]),
+    content: z.string().max(50),
+    targetIndex: z.number().int().nonnegative().nullable(),
+  })).max(5), // 单次提炼最多5条变更，防止 LLM 失控
+  reasoning: z.string().max(200),
+});
+
+export type RefinementResponse = z.infer<typeof refinementResponseSchema>;
 ```
+
+---
 
 ## 4. 核心逻辑规格
 
@@ -94,114 +123,142 @@ interface StyleProposal {
 
 ### 4.2 Stage 2: Batch Refinement (`session.idle` Hook)
 -   **前置检查**: `signals.length === 0` 时直接 return，零开销
--   **LLM 调用规格**:
-    -   Model: 用户配置的默认模型（通过 `$.llm` API 获取）
-    -   Temperature: **0.2** (低创造性，高确定性)
-    -   Max Tokens: 1024
-    -   Response Format: **Strict JSON Mode** (强制输出 `StyleProposal[]`)
--   **System Prompt 核心指令** (移植自 Honcho 辩证式推理):
-    > 你是用户风格分析器。你的任务是区分「临时指令」和「长期偏好」。
+-   **模型配置与 Fallback 链**:
+    ```typescript
+    const MODEL_FALLBACK_CHAIN = [
+      pluginConfig.refinementModel,      // 1. 用户显式配置
+      "deepseek/deepseek-chat-v4-flash", // 2. 插件推荐默认值
+      $.llm.getDefaultModel(),           // 3. OpenCode 全局默认模型
+    ];
+    // 运行时按顺序尝试，首个可用模型即生效；全部失败则抛出错误并记录 ERROR 日志
+    ```
+-   **LLM 调用规格**: Temperature **0.2** | Max Tokens 1024 | Strict JSON Mode
+-   **System Prompt (完整文本)**:
+    > 你是一个严谨的用户风格分析师。你的任务是从对话信号中提炼【跨项目、长期稳定】的用户偏好。
     >
-    > **判断标准**:
-    > - ✅ 长期偏好: 跨场景适用的沟通方式、工具链选择、技术审美、明确表达的厌恶
-    > - ❌ 临时指令: 仅针对当前任务的格式要求、一次性调试命令、特定文件的修改
+    > ## 核心原则 (Dialectical Reasoning)
+    > 在决定保留任何信号前，必须依次自问：
+    > 1. 这条偏好是否仅适用于当前特定任务？(如是 → 丢弃)
+    > 2. 这条偏好是否与已有 USER.md 内容语义重复？(如是 → action: "update")
+    > 3. 这条偏好是否推翻了已有条目？(如是 → action: "deprecate" 旧条目 + action: "append" 新条目)
+    > 4. 这条偏好在用户未来的其他项目中是否仍然有效？(如不确定 → 丢弃)
     >
-    > **辩证检验**: 对每个候选偏好，自问"如果用户明天做一个完全不同的项目，这条还适用吗？"不适用则丢弃。
+    > ## 输出格式 (Strict JSON)
+    > {"actions": [{"type": "append|update|deprecate", "category": "Communication|Coding|Reasoning|Tooling", "content": "精炼后的偏好描述（中文，≤30字）", "targetIndex": number|null}], "reasoning": "简要说明辩证思考过程（≤100字）"}
     >
-    > **去重规则**: 与现有 USER.md 语义重复的条目，action 设为 "update" 而非 "append"。
-    >
-    > **输出**: 仅返回 JSON 数组。无值得记录的偏好时返回 `[]`。不要输出任何自然语言解释。
+    > ## 约束
+    > - 绝不输出 markdown 代码块包裹的 JSON
+    > - 绝不编造未在信号中出现的内容
+    > - 若所有信号均不符合长期偏好标准，返回 {"actions": [], "reasoning": "..."}
 -   **置信度过滤**: LLM 返回后，丢弃所有 `confidence: "low"` 的提议
 
-### 4.3 自动写入与备份安全网
--   **写入策略**: `session.idle` 提炼完成后直接调用 `writeUserMd()` 原子写入，不再经过人工确认
--   **写入日志**: 写入成功后通过 `console.log('[memx] Updated USER.md: N items')` 输出日志
--   **自动备份**: `writeUserMd()` 每次覆盖写入前自动生成 `USER.md.bak.{timestamp}` 备份
--   **备份轮转**: 保留最近 5 个备份版本，超出部分自动清理
+### 4.3 防御性静默写入与安全网
+由于取消了人工确认，以下三层防护**必须全部实现**：
 
-### 4.4 200 行压缩机制
--   **触发条件**: `session.start` 时检测 USER.md 行数 > 200
--   **执行方式**: 异步后台 LLM 调用（不阻塞启动）
--   **压缩策略**: 将同一 `##` 分类下语义相近的条目合并为一条高层总结，保留最新日期
--   **安全网**: 压缩前自动备份为 `USER.md.bak.{timestamp}`；每次写入前自动备份 + 保留最近 5 版
+#### Layer 1: 原子写入 + 备份轮转
+```typescript
+async function atomicWrite(content: string): Promise<void> {
+  const filePath = path.join(os.homedir(), ".opencode", "USER.md");
+  const backupDir = path.join(os.homedir(), ".opencode", ".memx-backups");
+  await fs.mkdir(backupDir, { recursive: true });
+
+  // 1. 生成带时间戳备份
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = path.join(backupDir, `USER.md.bak.${timestamp}`);
+  if (await fs.exists(filePath)) await fs.copyFile(filePath, backupPath);
+
+  // 2. 原子替换：写临时文件 → rename
+  const tmpPath = `${filePath}.tmp`;
+  await fs.writeFile(tmpPath, content, "utf-8");
+  await fs.rename(tmpPath, filePath);
+
+  // 3. 备份轮转：保留最近5个
+  const backups = (await fs.readdir(backupDir))
+    .filter(f => f.startsWith("USER.md.bak.")).sort().reverse();
+  for (const old of backups.slice(5)) await fs.unlink(path.join(backupDir, old));
+}
+```
+
+#### Layer 2: 200行压缩触发器
+-   每次写入后检查有效行数 ≥ 180 → 触发 LLM 压缩（合并同类项 + 清除 deprecated）
+-   压缩后再次执行 Layer 1 备份
+
+#### Layer 3: 异常静默降级
+-   Zod 校验失败 → `console.warn('[memx:warn] Refinement output invalid, discarded')` + 保留 buffer 下次重试
+-   文件写入失败 → `console.error('[memx:error] Write failed, buffer preserved')` + 不抛出异常
+-   LLM 调用超时/报错 → `console.warn('[memx:warn] LLM call failed, will retry next idle')` + 指数退避
+
+### 4.4 可观测性规范
+| Level | Prefix | 触发场景 | 示例 |
+| :--- | :--- | :--- | :--- |
+| INFO | `[memx]` | 正常写入成功 | `[memx] Updated USER.md: 2 items appended` |
+| WARN | `[memx:warn]` | 非致命异常 | `[memx:warn] Zod validation failed, discarded` |
+| ERROR | `[memx:error]` | 需关注的故障 | `[memx:error] Backup rotation failed: EACCES` |
+| DEBUG | `[memx:debug]` | 仅 debug 模式 | `[memx:debug] Buffer size: 3, signals: [...]` |
+
+---
 
 ## 5. Plugin 接口契约 (OpenCode V2 API)
 
 ```typescript
-// 必须实现的 Hooks
 hooks: {
-  "session.start":    async (ctx: SessionContext) => Promise<void>;
-  "message.complete": async (ctx: MessageContext) => Promise<void>;
-  "session.idle":     async (ctx: SessionContext) => Promise<void>;
+  "session.start":    async (ctx: SessionContext) => Promise<void>;  // 加载 USER.md + 行数检查
+  "message.complete": async (ctx: MessageContext) => Promise<void>;  // Stage 1 信号捕获
+  "session.idle":     async (ctx: SessionContext) => Promise<void>;  // Stage 2 提炼+写入
 }
 
-// 必须实现的 Tools
 tools: {
   reflect: {
-    description: "手动触发 User Style 提炼（当 session.idle 未自动触发时使用）";
-    parameters: {};
-    execute: () => Promise<string>;
+    description: "手动触发 User Style 提炼（绕过 idle 等待）";
+    parameters: z.object({});
+    execute: async () => Promise<string>; // 返回成功/失败摘要
   };
 }
 
-// 必须实现的生命周期
 destroy: async () => Promise<void>;  // 清空 signals 缓冲区
 ```
+
+---
 
 ## 6. 工程约束与质量要求
 
 | 约束项 | 要求 |
 | :--- | :--- |
-| **零外部依赖** | 不使用 mem0ai、langchain 等重型库。仅用 OpenCode V2 SDK + Node/Bun 内置模块 |
-| **类型安全** | 全量 TypeScript Strict Mode，所有 LLM 返回值必须 runtime validate (推荐 zod) |
-| **错误隔离** | 插件任何异常不得中断主对话流程。所有 hook 内 try-catch + console.error |
+| **零外部依赖** | 不使用 mem0ai、langchain 等重型库。仅用 OpenCode V2 SDK + Node/Bun 内置模块 + zod |
+| **类型安全** | 全量 TypeScript Strict Mode，所有 LLM 返回值必须 runtime validate |
+| **错误隔离** | 插件任何异常不得中断主对话流程。所有 hook 内 try-catch + 分级日志 |
 | **测试覆盖** | 提供 `tests/fixtures/` 下的模拟对话历史 JSON，验证 Signal Capture 和 Refinement 逻辑 |
-| **文档** | README.md 包含安装步骤、USER.md 格式说明、手动命令用法 |
 | **许可证** | MIT |
+
+---
 
 ## 7. 交付物清单与文件路径规范
 
-所有代码必须严格按照以下目录结构生成。**禁止**在根目录散落任何 `.ts` / `.json` 文件（`package.json` 和 `tsconfig.json` 除外）。
-
 ```text
-opencode-memx/                      ← 插件项目根目录
-├── package.json                      ← NPM 包配置 + OpenCode V2 plugin 入口声明
-├── tsconfig.json                     ← TypeScript Strict Mode 配置
-├── README.md                         ← 用户文档
+opencode-memx/
+├── package.json
+├── tsconfig.json
+├── README.md
 ├── src/
-│   ├── index.ts                      ← Plugin 入口 (hooks/tools/destroy 组装)
-│   ├── types.ts                      ← StyleSignal / StyleProposal / Zod Schemas
-│   ├── prompts.ts                    ← Refinement System Prompt 常量 + JSON Schema
-│   ├── user-md.ts                    ← USER.md 读写/解析/压缩/备份/原子写入
-│   ├── signal-capture.ts             ← Stage 1: 正则扫描 + 缓冲区管理 (纯函数)
-│   └── refinement.ts                 ← Stage 2: LLM 调用 + Zod 校验 + 置信度过滤
+│   ├── index.ts              ← Plugin 入口
+│   ├── types.ts              ← StyleSignal / Zod Schemas
+│   ├── prompts.ts            ← REFINEMENT_SYSTEM_PROMPT 常量
+│   ├── user-md.ts            ← 读写/解析/压缩/备份/原子写入
+│   ├── signal-capture.ts     ← Stage 1: 正则扫描 + 缓冲区
+│   └── refinement.ts         ← Stage 2: LLM 调用 + Zod + Fallback 链
 ├── tests/
 │   ├── fixtures/
-│   │   ├── conversation-with-signals.json    ← 包含 STYLE_SIGNAL 标签的模拟对话
-│   │   ├── conversation-explicit-pref.json   ← 包含显式偏好关键词的模拟对话
-│   │   └── sample-user-md.md                 ← 用于测试去重/压缩的现有 USER.md
-│   ├── signal-capture.test.ts        ← ≥10 个用例覆盖各种信号模式
-│   ├── user-md.test.ts               ← 解析/写入/压缩/备份的单元测试
-│   └── refinement.test.ts            ← Mock LLM 返回值的校验逻辑测试
-└── .opencode-example/                ← 示例配置（供用户参考，非运行时依赖）
-    └── opencode.jsonc                ← 展示如何注册本插件的配置片段
+│   │   ├── conversation-with-signals.json
+│   │   ├── conversation-explicit-pref.json
+│   │   └── sample-user-md.md
+│   ├── signal-capture.test.ts
+│   ├── user-md.test.ts
+│   └── refinement.test.ts
+└── .opencode-example/
+    └── opencode.jsonc        ← 展示 refinementModel 配置
 ```
 
-### 路径约束
-
-| 规则 | 说明 |
-| :--- | :--- |
-| **源码隔离** | 所有运行时 TypeScript 代码必须在 `src/` 下，禁止根目录出现 `.ts` 文件 |
-| **测试隔离** | 所有测试文件和 fixture 必须在 `tests/` 下，禁止与源码混放 |
-| **Fixture 命名** | 测试数据文件使用 `kebab-case` + 描述性名称，后缀统一为 `.json` / `.md` |
-| **示例配置** | `.opencode-example/` 仅作为文档参考，**不得**被 `package.json` 的 `files` 字段包含 |
-| **构建产物** | 若需编译，输出目录为 `dist/`，并加入 `.gitignore`；OpenCode V2 原生支持 TS 直跑时可省略 |
-| **USER.md 运行时路径** | 硬编码为 `~/.opencode/USER.md`（通过 `os.homedir()` + `path.join` 动态拼接），**禁止**写入项目目录内 |
-
-### 生成顺序（带路径）
-
-请严格按此顺序逐文件生成，每完成一个文件后暂停等待确认：
-
+### 生成顺序（严格执行）
 1.  `opencode-memx/package.json`
 2.  `opencode-memx/tsconfig.json`
 3.  `opencode-memx/src/types.ts`
@@ -219,14 +276,15 @@ opencode-memx/                      ← 插件项目根目录
 15. `opencode-memx/.opencode-example/opencode.jsonc`
 16. `opencode-memx/README.md`
 
-> ⚠️ **注意**: `src/index.ts` 排在测试之后生成，因为它依赖前面所有模块的类型和接口。提前生成会导致占位符过多、后续返工。
+> ⚠️ **AI 执行指令**: 请严格按照此 PRD 的 §7 生成顺序逐文件生成。每完成一个文件后暂停，等我确认后再继续下一个。不要一次性输出所有代码。所有实现必须满足 §4.3 的三层防御性写入和 §4.4 的分级日志标准。
 
 ---
 
-### 💡 给使用者的提示
+## 8. 未来演进路线
 
-将此 PRD 发给 DeepSeek V4 Flash 时，建议追加一句：
-
-> "请严格按照此 PRD 的 §7 交付物清单顺序生成代码。每生成一个文件后暂停，等我确认后再继续下一个。不要一次性输出所有代码。"
-
-这样可以避免长上下文下的代码截断和质量衰减，确保每个模块都经过你的审查。
+| Phase | Trigger | Capability | Reference |
+| :--- | :--- | :--- | :--- |
+| **MVP (v1.0)** | Now | Regex + Dialectical Refinement + Silent Write + Backup | Honcho + Claude Code |
+| **v1.1** | USER.md > 50 items | Semantic Dedup via LLM (no external dep) | Mem0 Prompt Logic |
+| **v1.2** | USER.md > 100 items | Time Decay Sorting + Top-K Injection | OpenClaw Formula |
+| **v2.0** | Community Demand | Optional Vector Search via mem0ai SDK | Mem0 TS SDK |

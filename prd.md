@@ -3,24 +3,26 @@
 ## 1. 产品定位与边界
 -   **产品名称**: `opencode-memx`
 -   **运行环境**: OpenCode V2 Plugin API (TypeScript / Bun)
--   **核心目标**: 在会话结束时，自动从对话历史中提炼用户的长期交互偏好，并经用户确认后持久化到 `~/.opencode/USER.md`。
+-   **核心目标**: 在会话结束时，自动从对话历史中提炼用户的长期交互偏好，持久化到 `~/.opencode/USER.md`。
 -   **严格边界 (Non-Goals)**:
     -   ❌ **不存储**项目事实、环境配置、任务状态（这些属于 Memory.md 范畴，不在本 MVP 范围内）。
     -   ❌ **不依赖**外部向量数据库或独立 API 服务（纯本地文件系统 + LLM API）。
     -   ❌ **不修改**主对话 Context（提炼过程使用独立的后台 LLM 调用）。
-    -   ❌ **不支持**自动静默写入（所有 USER.md 变更必须经用户显式确认）。
 
-## 2. 核心架构：三阶段管道
+## 2. 核心架构：双阶段管道
 
 ```text
-[Stage 1: Signal Capture]     [Stage 2: Batch Refinement]      [Stage 3: Human Confirmation]
-  (message.complete hook)       (session.idle hook)              (TUI confirm dialog)
-        │                              │                                │
-  轻量正则扫描 ──────────────→  后台LLM辩证提炼 ──────────────→  结构化提议展示
-  STYLE_SIGNAL标签              + 现有USER.md比对                  用户 Y/N 选择
-  显式偏好关键词                + 增量Patch生成                    ↓
-        │                              │                          原子写入USER.md
-  内存缓冲区(signals[])         过滤低置信度条目                   清空缓冲区
+[Stage 1: Signal Capture]       [Stage 2: Batch Refinement + Persist]
+  (message.complete hook)         (session.idle hook)
+        │                                │
+  轻量正则扫描 ──────────────→  后台LLM辩证提炼
+  STYLE_SIGNAL标签              + 现有USER.md比对
+  显式偏好关键词                + 增量Patch生成
+        │                       + 写入前自动备份
+  内存缓冲区(signals[])         + 原子写入 + 备份轮转(保留5版)
+        │                                │
+        ↓                                ↓
+  捕获信号存入缓冲区           console.log 输出结果 + 清空缓冲区
 ```
 
 ## 3. 数据契约
@@ -111,28 +113,17 @@ interface StyleProposal {
     > **输出**: 仅返回 JSON 数组。无值得记录的偏好时返回 `[]`。不要输出任何自然语言解释。
 -   **置信度过滤**: LLM 返回后，丢弃所有 `confidence: "low"` 的提议
 
-### 4.3 Stage 3: Human Confirmation
--   **UI 交互**: 使用 OpenCode V2 `$.ui.confirm()` API
--   **展示格式**:
-    ```text
-    💡 [memx] 检测到 N 条风格更新:
-
-    [1] ✏️ 沟通与交互风格: 偏好直接给完整代码
-        理由: 用户在第12轮说"别解释了直接把改好的文件给我"
-
-    [2] ➕ 踩坑与禁忌: 不要在注释中使用 Emoji
-        理由: 用户两次纠正了带 Emoji 的代码注释
-
-    确认写入? [Y/n/e(编辑)]
-    ```
--   **编辑模式**: 用户输入 `e` 时，允许逐条修改 content 或跳过某条
--   **写入原子性**: 使用 `writeFileSync` + 临时文件 rename 模式，防止写入中断导致 USER.md 损坏
+### 4.3 自动写入与备份安全网
+-   **写入策略**: `session.idle` 提炼完成后直接调用 `writeUserMd()` 原子写入，不再经过人工确认
+-   **写入日志**: 写入成功后通过 `console.log('[memx] Updated USER.md: N items')` 输出日志
+-   **自动备份**: `writeUserMd()` 每次覆盖写入前自动生成 `USER.md.bak.{timestamp}` 备份
+-   **备份轮转**: 保留最近 5 个备份版本，超出部分自动清理
 
 ### 4.4 200 行压缩机制
 -   **触发条件**: `session.start` 时检测 USER.md 行数 > 200
 -   **执行方式**: 异步后台 LLM 调用（不阻塞启动）
 -   **压缩策略**: 将同一 `##` 分类下语义相近的条目合并为一条高层总结，保留最新日期
--   **安全网**: 压缩前自动备份为 `USER.md.bak.{timestamp}`
+-   **安全网**: 压缩前自动备份为 `USER.md.bak.{timestamp}`；每次写入前自动备份 + 保留最近 5 版
 
 ## 5. Plugin 接口契约 (OpenCode V2 API)
 
@@ -150,15 +141,6 @@ tools: {
     description: "手动触发 User Style 提炼（当 session.idle 未自动触发时使用）";
     parameters: {};
     execute: () => Promise<string>;
-  };
-  edit_user_style: {
-    description: "手动添加/修改一条 User Style 条目";
-    parameters: {
-      category: z.enum(["communication","toolchain","architecture","pitfall"]);
-      content: z.string().max(100);
-      action: z.enum(["append","deprecate"]).default("append");
-    };
-    execute: (params) => Promise<string>;
   };
 }
 

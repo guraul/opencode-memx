@@ -1,35 +1,44 @@
 # opencode-memx
 
-OpenCode V2 用户风格记忆插件。从对话历史中自动提炼跨会话的用户偏好，经你确认后持久化到 `~/.opencode/USER.md`。
+OpenCode V2 用户风格记忆插件。从对话历史中自动提炼跨会话的用户偏好，持久化到 `~/.opencode/USER.md`。
 
 ## 设计哲学
 
 > 详见 [`muse.md`](muse.md) — 设计灵感、开源参考与决策溯源完整记录。
 
-`opencode-memx` 基于一个核心洞察：**用户偏好（User Style）和项目事实（Memory）是两种截然不同的记忆类型**。前者是跨项目的慢变量画像，需要辩证提炼和人类确认；后者是项目绑定的快变量日志，需要实时捕获和自动归档。本插件专注于前者。
+`opencode-memx` 基于一个核心洞察：**用户偏好（User Style）和项目事实（Memory）是两种截然不同的记忆类型**。前者是跨项目的慢变量画像，需要辩证提炼；后者是项目绑定的快变量日志，需要实时捕获和自动归档。本插件专注于前者。
 
-借鉴了 **Honcho** 的辩证推理、**Mem0** 的去重机制、**OpenClaw** 的生命周期管理，在 OpenCode V2 Plugin API 上实现了零外部依赖、人类可控的风格记忆系统。
+### 开源实现借鉴
+
+| 参考项目 | 借鉴部分 | 本插件中的体现 |
+| :--- | :--- | :--- |
+| **Honcho** | 辩证式推理 Prompt | System Prompt 要求 LLM 自问"跨项目是否仍适用"，区分临时指令与长期偏好 |
+| **Mem0** | 去重与增量更新机制 | `StyleProposal.action`（append/update/deprecate）+ 去重规则 |
+| **OpenClaw** | 时间衰减与生命周期管理 | 200 行压缩机制 + 废弃条目删除线标记（不物理删除） |
+| **OpenCode V2 Plugin API** | Hook 体系 | `message.complete` / `session.idle` 等原生 API 对齐 |
+| **Zod** | Runtime Schema Validation | 所有 LLM 返回值强制 runtime validate，防止 JSON Mode 输出漂移 |
 
 ### 关键设计决策
 
 | 决策 | 理由 |
 | :--- | :--- |
-| **必须人类确认** | User Style 一旦记错会导致后续所有会话体验降级，且难以察觉 |
+| **自动写入 + 备份** | 去掉了人工确认环节，每次写入前自动备份 + 保留最近 5 版 |
 | **Stage 1 禁止调 LLM** | `message.complete` 每轮触发，纯正则匹配耗时 < 5ms，LLM 仅在空闲时批量调用 |
 | **USER.md 限 200 行** | 过长会挤占 System Prompt 空间，超限自动压缩 |
 | **命名 `memx`** | 保留 memory 语义，暗示扩展（extension），为 Memory.md 轨道预留命名空间 |
 
-## 三阶段管道
+## 双阶段管道
 
 ```
-[信号捕获]      →    [批处理提炼]       →   [人类确认]
-message.complete     session.idle           TUI 确认弹窗
-     │                     │                     │
- 正则扫描             LLM 辩证提炼          提议列表展示
- (无 LLM, <5ms)       + USER.md 比对         Y/N 选择
-     │                + 低置信度过滤              ↓
- 内存缓冲区              增量 Patch             原子写入
- (上限 20 条)                                    ~/.opencode/USER.md
+[信号捕获]      →    [批处理提炼 + 持久化]
+message.complete     session.idle
+     │                     │
+  正则扫描             LLM 辩证提炼
+ (无 LLM, <5ms)       + USER.md 比对
+     │                + 增量 Patch 生成
+  内存缓冲区          + 自动备份 + 备份轮转
+ (上限 20 条)         ↓
+                     console.log + 清空缓冲区
 ```
 
 ## 安装
@@ -109,14 +118,6 @@ npm install
 
 ### `reflect`
 手动触发风格提炼（`session.idle` 未自动触发时使用）。
-
-### `edit_user_style`
-手动添加或废弃一条条目。
-
-参数：
-- `category`: `"communication" | "toolchain" | "architecture" | "pitfall"`
-- `content`: 条目内容（最多 100 字）
-- `action`: `"append"`（默认）或 `"deprecate"`
 
 ## 开发
 

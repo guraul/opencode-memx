@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from "fs";
-import { join } from "path";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, readdirSync, unlinkSync } from "fs";
+import { join, basename } from "path";
 import { homedir } from "os";
 import type { UserMdSection, StyleProposal } from "./types";
 import { CATEGORY_HEADERS, HEADER_TO_CATEGORY, CATEGORIES, type Category } from "./types";
@@ -28,6 +28,12 @@ export function readUserMd(): string {
 export function writeUserMd(content: string): void {
   ensureDir();
   const path = getUserMdPath();
+
+  if (existsSync(path)) {
+    backupUserMd();
+    cleanupOldBackups(5);
+  }
+
   const tmpPath = `${path}.tmp.${Date.now()}`;
   writeFileSync(tmpPath, content, "utf-8");
   renameSync(tmpPath, path);
@@ -104,6 +110,26 @@ export function backupUserMd(): string | null {
   const content = readFileSync(path, "utf-8");
   writeFileSync(bakPath, content, "utf-8");
   return bakPath;
+}
+
+export function cleanupOldBackups(maxKeep = 5): void {
+  const dir = join(homedir(), ".opencode");
+  if (!existsSync(dir)) return;
+
+  const prefix = `${basename(getUserMdPath())}.bak.`;
+  const backups = readdirSync(dir)
+    .filter((f) => f.startsWith(prefix))
+    .map((f) => join(dir, f))
+    .sort()
+    .reverse();
+
+  for (const old of backups.slice(maxKeep)) {
+    try {
+      unlinkSync(old);
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export function isOverLimit(content: string, limit = 200): boolean {

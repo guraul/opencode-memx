@@ -2,8 +2,6 @@ import { SignalBuffer, captureSignals } from "./signal-capture";
 import { refine } from "./refinement";
 import type { LLMClient } from "./refinement";
 import { readUserMd, writeUserMd, applyProposal, backupUserMd, isOverLimit, parseUserMd, serializeUserMd } from "./user-md";
-import { CATEGORIES, CATEGORY_HEADERS } from "./types";
-import type { Category, StyleProposal } from "./types";
 
 interface OpenCodeV2Message {
   role: string;
@@ -19,9 +17,6 @@ interface OpenCodeV2SessionContext {
       maxTokens?: number;
       model?: string;
     }) => Promise<{ choices?: Array<{ message?: { content?: string } }> }>;
-  };
-  ui: {
-    confirm: (message: string, options?: { default?: boolean }) => Promise<boolean>;
   };
   messages?: OpenCodeV2Message[];
   pluginConfig?: Record<string, Record<string, unknown>>;
@@ -59,27 +54,12 @@ async function runRefinement(ctx: OpenCodeV2SessionContext): Promise<void> {
 
   if (proposals.length === 0) return;
 
-  const proposalLines = proposals
-    .map((p, i) => {
-      const actionLabel =
-        p.action === "append" ? "➕" : p.action === "update" ? "✏️" : "🗑️";
-      const catLabel = CATEGORY_HEADERS[p.category as Category] ?? p.category;
-      return `[${i + 1}] ${actionLabel} ${catLabel}: ${p.content}\n   理由: ${p.reason}`;
-    })
-    .join("\n\n");
-
-  const confirmed = await ctx.ui.confirm(
-    `💡 [memx] 检测到 ${proposals.length} 条风格更新:\n\n${proposalLines}\n\n确认写入?`,
-    { default: true },
-  );
-
-  if (!confirmed) return;
-
   let content = existingContent;
   for (const proposal of proposals) {
     content = applyProposal(proposal, content);
   }
   writeUserMd(content);
+  console.log(`[memx] Updated USER.md: ${proposals.length} items`);
   buffer.clear();
 }
 
@@ -133,53 +113,6 @@ export default {
           return `[memx] 提炼完成，已处理 ${buffer.length} 条信号。`;
         } catch (err) {
           return `[memx] 提炼失败: ${err}`;
-        }
-      },
-    },
-
-    edit_user_style: {
-      description: "手动添加/修改一条 User Style 条目",
-      parameters: {
-        category: {
-          type: "string",
-          enum: ["communication", "toolchain", "architecture", "pitfall"],
-          description: "条目分类",
-        },
-        content: {
-          type: "string",
-          maxLength: 100,
-          description: "条目内容",
-        },
-        action: {
-          type: "string",
-          enum: ["append", "deprecate"],
-          default: "append",
-          description: "操作类型",
-        },
-      },
-      execute: async (params: {
-        category: string;
-        content: string;
-        action?: string;
-      }): Promise<string> => {
-        try {
-          const cat = params.category as Category;
-          if (!CATEGORIES.includes(cat)) {
-            return `[memx] 无效分类。可选: ${CATEGORIES.join(", ")}`;
-          }
-
-          const existingContent = readUserMd();
-          const proposal: StyleProposal = {
-            action: (params.action as "append" | "deprecate") ?? "append",
-            category: cat,
-            content: params.content,
-            reason: "用户手动添加",
-          };
-          const newContent = applyProposal(proposal, existingContent);
-          writeUserMd(newContent);
-          return `[memx] 已${params.action === "deprecate" ? "废弃" : "添加"}条目: ${params.content}`;
-        } catch (err) {
-          return `[memx] 操作失败: ${err}`;
         }
       },
     },

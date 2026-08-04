@@ -156,14 +156,12 @@ export function createSessionLLMClient(client, model?: string): LLMClient {
         const child = await client.session.create({ body: { title: "memx-refinement" }});
         childSessionID = child.data?.id ?? child.id;
 
-        // V2 session.prompt 无 system 字段，把 system prompt 拼进 user message 前缀
-        const systemPrefix = params.system ? `<system>${params.system}</system>
-
-` : "";
-        const userText = params.messages[0]?.content ?? "";
         const promptBody: any = {
-          parts: [{ type: "text", text: systemPrefix + userText }],
+          parts: [{ type: "text", text: params.messages[0]?.content ?? "" }],
         };
+        if (params.system) {
+          promptBody.system = params.system;
+        }
         if (model) {
           const [providerID, modelID] = model.split("/");
           promptBody.model = { providerID, modelID };
@@ -237,7 +235,7 @@ throttleMinutes: z.number().int().positive().optional().default(10),
 
 | 风险 | 缓解 |
 |:---|:---|
-| `session.prompt` 返回结构不确定（data 嵌套 vs 扁平） | `session-llm.ts` 用 `res.data?.parts ?? res.parts ?? []` 双重兼容 |
+| `session.prompt` 返回结构（data 嵌套 vs 扁平） | SDK 默认 `responseStyle: "fields"`，`res.data` 取 `{ info, parts }`；用 `res.data?.parts ?? []` 兜底 |
 | 子会话创建失败 | try/catch + finally 确保清理；失败时 `chat` 返回空串，refine 返回空数组 |
 | `session.idle` 每轮触发太频繁 | 节流 N 分钟 + buffer 空时直接跳过 |
 | 拉全量历史可能很大 | 只取最后一轮对话扫描，不全量进 buffer |

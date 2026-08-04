@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json.schemastore.org/memx-config.json",
+  "refinementModel": "deepseek/deepseek-chat-v4-flash",
+  "maxSignalsPerSession": 20,
+  "autoBackupCount": 5
+}

@@ -2,6 +2,7 @@ import { SignalBuffer, captureSignals } from "./signal-capture";
 import { refine } from "./refinement";
 import type { LLMClient } from "./refinement";
 import { readUserMd, writeUserMd, applyProposal, backupUserMd, isOverLimit, parseUserMd, serializeUserMd } from "./user-md";
+import { loadMemxConfig } from "./config";
 
 interface OpenCodeV2Message {
   role: string;
@@ -19,7 +20,6 @@ interface OpenCodeV2SessionContext {
     }) => Promise<{ choices?: Array<{ message?: { content?: string } }> }>;
   };
   messages?: OpenCodeV2Message[];
-  pluginConfig?: Record<string, Record<string, unknown>>;
 }
 
 interface OpenCodeV2MessageContext extends OpenCodeV2SessionContext {
@@ -48,9 +48,8 @@ async function runRefinement(ctx: OpenCodeV2SessionContext): Promise<void> {
   const signals = buffer.getAll();
   const existingContent = readUserMd();
   const llm = createLLMClient(ctx);
-  const pluginCfg = ctx.pluginConfig?.["opencode-memx"] as { refinementModel?: string } | undefined;
-  const model = pluginCfg?.refinementModel;
-  const proposals = await refine(signals, llm, existingContent, model);
+  const config = await loadMemxConfig();
+  const proposals = await refine(signals, llm, existingContent, config.refinementModel);
 
   if (proposals.length === 0) return;
 

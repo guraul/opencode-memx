@@ -30,6 +30,12 @@
 | **Mem0** | Semantic Deduplication Logic | Refinement Prompt 输出 `action: "update"` 而非盲目 `"append"` |
 | **OpenClaw** | Time Decay Metadata | 每条记录前缀 `[YYYY-MM-DD]`；预留 `last_accessed` 字段 |
 
+### 1.4 独立配置文件规范
+插件使用 `~/.opencode/memx.config.json` 存储用户偏好。
+- **格式**: 标准 JSON (支持 Zod 校验)
+- **热加载**: 每次 `session.start` 或 `session.idle` 触发提炼时重新读取，修改后无需重启 OpenCode。
+- **容错性**: 文件缺失或 JSON 语法错误时，插件自动降级至内置默认值，并输出 `[memx:warn]` 日志，绝不中断主流程。
+
 ---
 
 ## 2. 核心架构：双阶段异步管道
@@ -124,13 +130,12 @@ export type RefinementResponse = z.infer<typeof refinementResponseSchema>;
 ### 4.2 Stage 2: Batch Refinement (`session.idle` Hook)
 -   **前置检查**: `signals.length === 0` 时直接 return，零开销
 -   **模型配置与 Fallback 链**:
-    ```typescript
-    const MODEL_FALLBACK_CHAIN = [
-      pluginConfig.refinementModel,      // 1. 用户显式配置
-      "deepseek/deepseek-chat-v4-flash", // 2. 插件推荐默认值
-      $.llm.getDefaultModel(),           // 3. OpenCode 全局默认模型
-    ];
-    // 运行时按顺序尝试，首个可用模型即生效；全部失败则抛出错误并记录 ERROR 日志
+    ```
+    配置来源: 独立配置文件 ~/.opencode/memx.config.json
+    Fallback 链:
+    1. memx.config.json 中的 refinementModel 字段
+    2. 若文件缺失或字段为空，降级至 "deepseek/deepseek-chat-v4-flash"
+    3. 若默认模型调用失败，最终 Fallback 至 $.llm.getDefaultModel()
     ```
 -   **LLM 调用规格**: Temperature **0.2** | Max Tokens 1024 | Strict JSON Mode
 -   **System Prompt (完整文本)**:
@@ -244,6 +249,7 @@ opencode-memx/
 │   ├── types.ts              ← StyleSignal / Zod Schemas
 │   ├── prompts.ts            ← REFINEMENT_SYSTEM_PROMPT 常量
 │   ├── user-md.ts            ← 读写/解析/压缩/备份/原子写入
+│   ├── config.ts              ← 配置加载模块 (Zod 校验 + 容错降级)
 │   ├── signal-capture.ts     ← Stage 1: 正则扫描 + 缓冲区
 │   └── refinement.ts         ← Stage 2: LLM 调用 + Zod + Fallback 链
 ├── tests/
@@ -255,14 +261,15 @@ opencode-memx/
 │   ├── user-md.test.ts
 │   └── refinement.test.ts
 └── .opencode-example/
-    └── opencode.jsonc        ← 展示 refinementModel 配置
+    └── memx.config.json       ← 示例配置文件
 ```
 
 ### 生成顺序（严格执行）
 1.  `opencode-memx/package.json`
 2.  `opencode-memx/tsconfig.json`
 3.  `opencode-memx/src/types.ts`
-4.  `opencode-memx/src/prompts.ts`
+4.  `opencode-memx/src/config.ts`
+5.  `opencode-memx/src/prompts.ts`
 5.  `opencode-memx/src/user-md.ts`
 6.  `opencode-memx/src/signal-capture.ts`
 7.  `opencode-memx/tests/fixtures/conversation-with-signals.json`
@@ -273,7 +280,7 @@ opencode-memx/
 12. `opencode-memx/src/refinement.ts`
 13. `opencode-memx/tests/refinement.test.ts`
 14. `opencode-memx/src/index.ts`
-15. `opencode-memx/.opencode-example/opencode.jsonc`
+15. `opencode-memx/.opencode-example/memx.config.json`
 16. `opencode-memx/README.md`
 
 > ⚠️ **AI 执行指令**: 请严格按照此 PRD 的 §7 生成顺序逐文件生成。每完成一个文件后暂停，等我确认后再继续下一个。不要一次性输出所有代码。所有实现必须满足 §4.3 的三层防御性写入和 §4.4 的分级日志标准。

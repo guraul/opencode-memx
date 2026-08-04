@@ -85,13 +85,17 @@ async function runRefinement(client: any, _sessionID: string): Promise<string> {
   markRun();
   buffer.clear();
 
-  await client.app.log({
-    body: {
-      service: "memx",
-      level: "info",
-      message: `Updated USER.md: ${proposals.length} items`,
-    },
-  });
+  try {
+    await client.app.log({
+      body: {
+        service: "memx",
+        level: "info",
+        message: `Updated USER.md: ${proposals.length} items`,
+      },
+    });
+  } catch {
+    // logging must never escape the hook
+  }
 
   return `[memx] 已写入 ${proposals.length} 条`;
 }
@@ -111,13 +115,17 @@ export const MemxPlugin: Plugin = async ({ client }) => {
         }
         await runRefinement(client, sessionID);
       } catch (err) {
-        await client.app.log({
-          body: {
-            service: "memx",
-            level: "error",
-            message: String(err),
-          },
-        });
+        try {
+          await client.app.log({
+            body: {
+              service: "memx",
+              level: "error",
+              message: String(err),
+            },
+          });
+        } catch {
+          // logging must never escape the hook
+        }
       }
     },
 

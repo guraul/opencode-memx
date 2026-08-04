@@ -7,6 +7,7 @@ const MemxConfigSchema = z.object({
   refinementModel: z.string().optional().default("deepseek/deepseek-chat-v4-flash"),
   maxSignalsPerSession: z.number().int().positive().optional().default(20),
   autoBackupCount: z.number().int().positive().optional().default(5),
+  throttleMinutes: z.number().int().positive().optional().default(10),
 });
 
 export type MemxConfig = z.infer<typeof MemxConfigSchema>;

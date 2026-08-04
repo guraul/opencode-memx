@@ -19,18 +19,6 @@
   "files": [
     "src/"
   ],
-  "opencode": {
-    "type": "plugin",
-    "hooks": [
-      "session.start",
-      "message.complete",
-      "session.idle"
-    ],
-    "tools": [
-      "reflect",
-      "edit_user_style"
-    ]
-  },
   "directories": {
     "doc": "docs",
     "test": "tests"
@@ -45,6 +33,7 @@
   },
   "homepage": "https://github.com/guraul/opencode-memx#readme",
   "dependencies": {
+    "@opencode-ai/plugin": "^1.18.12",
     "zod": "^4.4.3"
   },
   "devDependencies": {

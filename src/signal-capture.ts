@@ -4,10 +4,10 @@ import type { Category } from "./types";
 
 const MAX_BUFFER_SIZE = 20;
 
-const EXPLICIT_KEYWORD_RE = /以后都|记住|不要再用|我喜欢|我偏好|别这样|太啰嗦|直接给/;
+const EXPLICIT_KEYWORD_RE = /以后都|以后|记住|不要再用|不用|不需要|我喜欢|我偏好|别这样|太啰嗦|直接给|先给|别解释|不用解释|回答给|给结论|别废话|少废话|简洁点|简单点|直接说/;
 
-const NEGATION_WORDS = ["不要", "别用", "别", "不要再用"];
-const FORMAT_WORDS = ["表格", "Emoji", "代码块", "列表", "标题"];
+const NEGATION_WORDS = ["不要", "别用", "别", "不要再用", "不用", "不需要", "别再", "少"];
+const FORMAT_WORDS = ["表格", "Emoji", "代码块", "列表", "标题", "解释", "结论", "前言", "废话", "步骤", "推导", "背景", "过程", "展开", "细节", "详细", "解释结论"];
 
 const STYLE_SIGNAL_RE = /<!--\s*STYLE_SIGNAL:\s*(\{.+?\})\s*-->/;
 
@@ -97,7 +97,7 @@ function inferCategory(message: string): Category {
 
 function extractContent(message: string): string {
   const cleaned = message
-    .replace(/以后都|记住|不要再用|我喜欢|我偏好|别这样|太啰嗦|直接给/g, "")
+    .replace(/以后都|以后|记住|不要再用|不用|不需要|我喜欢|我偏好|别这样|太啰嗦|直接给|先给|别解释|不用解释|回答给|给结论|别废话|少废话|简洁点|简单点|直接说/g, "")
     .replace(/\s+/g, " ")
     .trim();
   return cleaned.length > 100 ? cleaned.slice(0, 97) + "..." : cleaned;

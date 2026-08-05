@@ -65,6 +65,34 @@ Second comment: <!-- STYLE_SIGNAL: {"category": "toolchain", "content": "prefers
     expect(result.some((s) => s.source === "explicit")).toBe(true);
   });
 
+  it("detects '不用解释' as explicit preference", () => {
+    const user = "回答给结论，不用解释结论是怎么得出来的。";
+    const ai = "好的";
+    const result = captureSignals(user, ai);
+    expect(result.some((s) => s.source === "explicit")).toBe(true);
+  });
+
+  it("detects '先给' as explicit preference", () => {
+    const user = "以后先给结论";
+    const ai = "明白";
+    const result = captureSignals(user, ai);
+    expect(result.some((s) => s.source === "explicit")).toBe(true);
+  });
+
+  it("detects '别废话' as explicit preference", () => {
+    const user = "别废话，直接说重点";
+    const ai = "好的";
+    const result = captureSignals(user, ai);
+    expect(result.some((s) => s.source === "explicit")).toBe(true);
+  });
+
+  it("detects format feedback '不用解释'", () => {
+    const user = "不用解释推导过程";
+    const ai = "好的";
+    const result = captureSignals(user, ai);
+    expect(result.some((s) => s.source === "format_feedback")).toBe(true);
+  });
+
   it("detects format feedback '不要表格'", () => {
     const user = "不要表格，用列表就行";
     const ai = "好的";

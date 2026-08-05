@@ -1,4 +1,7 @@
+# opencode-memx — agent 不应读取/修改的路径（gitignore 风格）
 node_modules/
 dist/
+.git/
+.superpowers/
 prd.md
 docs/

@@ -35,9 +35,16 @@ OpenCode V2 用户风格记忆插件。从对话历史中自动提炼跨会话�
  (无 LLM, <5ms)       + USER.md 比对
      │                + 增量 Patch 生成
   内存缓冲区          + 自动备份 + 备份轮转
- (上限 20 条)         ↓
-                     console.log + 清空缓冲区
+ (上限 20 条,         ↓
+  按 evidence 去重)   app.log 诊断日志 + 清空缓冲区
 ```
+
+## 触发机制
+
+- `session.idle`：每次回复结束、会话真正空闲时触发，自动捕获信号并提炼（受 `throttleMinutes` 节流）。
+- `session.deleted` / 退出（`dispose`）：强制冲刷缓冲区，不拉取会话历史。
+- `reflect` 工具：手动触发完整提炼（拉取当前会话最后一轮 + 跳过节流），用于 `session.idle` 未触发时的兜底。
+- 插件自动跳过自己创建的提炼子会话，不会自我触发；提炼过程互斥串行，防止并发风暴与重复写入。
 
 ## 安装
 
@@ -107,6 +114,14 @@ OpenCode V2 用户风格记忆插件。从对话历史中自动提炼跨会话�
 
 ### `reflect`
 手动触发风格提炼（`session.idle` 未自动触发时使用）。
+
+## 故障排查
+
+- **`session.idle` 迟迟不触发**：该事件只在会话真正空闲（一轮回复完全结束）后触发，连续工具调用 / 活跃回合会无限延迟。直接调用 `reflect` 工具手动触发。
+- **改代码不生效**：插件在 OpenCode 启动时加载一次，修改 `src/` 后必须重启 OpenCode；修改 `~/.opencode/memx.config.json` 则即时生效（每次提炼时重新读取）。
+- **提炼模型**：默认 `opencode/deepseek-v4-flash-free`（内置免费模型，无需 API key）。deepseek 官方 key 在当前环境无效，不要配置 `deepseek/*` 模型。
+- **日志**：位于 `~/.local/share/opencode/log/opencode.log`。插件的 `app.log` 消息不显示 `service` 字段，排查时搜索 `level=ERROR`，成功写入搜索 `Updated USER.md`。
+- **LLM 输出排查**：每次提炼会记录 `llm raw(N): ...`（400 字符截断），可确认 LLM 原始返回是否合法 JSON。
 
 ## 开发
 

@@ -17,13 +17,14 @@ import { loadMemxConfig } from "./config";
 import { shouldRun, markRun } from "./throttle";
 
 const buffer = new SignalBuffer();
+const childSessionIDs = new Set<string>();
 
 interface LastTurn {
   user: string;
   assistant: string;
 }
 
-function extractLastTurn(
+export function extractLastTurn(
   msgs: Array<{ info: { role: string }; parts: Array<{ type: string; text?: string }> }>,
 ): LastTurn | null {
   let lastUserIdx = -1;
@@ -62,7 +63,9 @@ async function runRefinement(client: any, _sessionID: string): Promise<string> {
 
   const signals = buffer.getAll();
   const existingContent = readUserMd();
-  const llm: LLMClient = createSessionLLMClient(client, config.refinementModel);
+  const llm: LLMClient = createSessionLLMClient(client, config.refinementModel, (id) => {
+    childSessionIDs.add(id);
+  });
   const proposals = await refine(signals, llm, existingContent, config.refinementModel);
 
   if (proposals.length === 0) {
@@ -106,6 +109,10 @@ export const MemxPlugin: Plugin = async ({ client }) => {
       if (event.type !== "session.idle") return;
       try {
         const sessionID = (event as any).properties.sessionID as string;
+        if (childSessionIDs.has(sessionID)) {
+          childSessionIDs.delete(sessionID);
+          return;
+        }
         const res = await client.session.messages({ path: { id: sessionID } });
         const msgs = res.data ?? [];
         const last = extractLastTurn(msgs);
@@ -114,6 +121,7 @@ export const MemxPlugin: Plugin = async ({ client }) => {
           buffer.pushAll(signals);
         }
         await runRefinement(client, sessionID);
+        childSessionIDs.delete(sessionID);
       } catch (err) {
         try {
           await client.app.log({

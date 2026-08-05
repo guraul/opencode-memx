@@ -1,6 +1,10 @@
 import type { LLMClient } from "./refinement";
 
-export function createSessionLLMClient(client: any, model?: string): LLMClient {
+export function createSessionLLMClient(
+  client: any,
+  model?: string,
+  onCreated?: (id: string) => void,
+): LLMClient {
   return {
     chat: async (params) => {
       let childSessionID: string | undefined;
@@ -9,6 +13,7 @@ export function createSessionLLMClient(client: any, model?: string): LLMClient {
           body: { title: "memx-refinement" },
         });
         childSessionID = created.data?.id ?? created.id;
+        if (onCreated && childSessionID) onCreated(childSessionID);
 
         const promptBody: {
           parts: Array<{ type: string; text: string }>;

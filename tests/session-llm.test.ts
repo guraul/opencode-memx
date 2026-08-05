@@ -88,4 +88,16 @@ describe("createSessionLLMClient", () => {
     const promptCall = client.session.prompt.mock.calls[0][0];
     expect(promptCall.body).not.toHaveProperty("model");
   });
+
+  it("calls onCreated with the child session id", async () => {
+    const { client } = createMockClient({
+      createdId: "child-cb",
+      promptParts: [{ type: "text", text: "ok" }],
+    });
+    const onCreated = vi.fn();
+    const llm = createSessionLLMClient(client, undefined, onCreated);
+    await llm.chat({ system: "", messages: [{ role: "user", content: "Hi" }] });
+    expect(onCreated).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledWith("child-cb");
+  });
 });

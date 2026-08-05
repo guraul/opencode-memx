@@ -13,7 +13,7 @@ OpenCode V2 用户风格记忆插件。从对话历史中自动提炼跨会话�
 | **Honcho** | 辩证式推理 Prompt | System Prompt 要求 LLM 自问"跨项目是否仍适用"，区分临时指令与长期偏好 |
 | **Mem0** | 去重与增量更新机制 | `StyleProposal.action`（append/update/deprecate）+ 去重规则 |
 | **OpenClaw** | 时间衰减与生命周期管理 | 200 行压缩机制 + 废弃条目删除线标记（不物理删除） |
-| **OpenCode V2 Plugin API** | Hook 体系 | `message.complete` / `session.idle` 等原生 API 对齐 |
+| **OpenCode V2 Plugin API** | Hook 体系 | `event` / `tool.reflect` / `dispose` 等原生 API 对齐 |
 | **Zod** | Runtime Schema Validation | 所有 LLM 返回值强制 runtime validate，防止 JSON Mode 输出漂移 |
 
 ### 关键设计决策
@@ -21,7 +21,7 @@ OpenCode V2 用户风格记忆插件。从对话历史中自动提炼跨会话�
 | 决策 | 理由 |
 | :--- | :--- |
 | **自动写入 + 备份** | 去掉了人工确认环节，每次写入前自动备份 + 保留最近 5 版 |
-| **Stage 1 禁止调 LLM** | `message.complete` 每轮触发，纯正则匹配耗时 < 5ms，LLM 仅在空闲时批量调用 |
+| **Stage 1 禁止调 LLM** | `session.idle` 事件内纯正则匹配耗时 < 5ms，LLM 仅在空闲时批量调用 |
 | **USER.md 限 200 行** | 过长会挤占 System Prompt 空间，超限自动压缩 |
 | **命名 `memx`** | 保留 memory 语义，暗示扩展（extension），为 Memory.md 轨道预留命名空间 |
 
@@ -29,7 +29,7 @@ OpenCode V2 用户风格记忆插件。从对话历史中自动提炼跨会话�
 
 ```
 [信号捕获]      →    [批处理提炼 + 持久化]
-message.complete     session.idle
+ session.idle          session.idle
      │                     │
   正则扫描             LLM 辩证提炼
  (无 LLM, <5ms)       + USER.md 比对
@@ -41,47 +41,38 @@ message.complete     session.idle
 
 ## 安装
 
-```bash
-git clone <仓库地址> /path/to/opencode-memx
-cd /path/to/opencode-memx
-npm install
-```
+### 方式一：全局插件目录（推荐）
 
-在 OpenCode 配置中注册插件（参考 `.opencode-example/opencode.jsonc`）：
+1. 克隆仓库：
+   ```bash
+   git clone <仓库地址> /path/to/opencode-memx
+   cd /path/to/opencode-memx
+   npm install
+   ```
 
-```json
-{
-  "plugins": {
-    "opencode-memx": {
-      "path": "/path/to/opencode-memx"
-    }
-  }
-}
-```
+2. 创建全局插件入口（指向 src/index.ts）：
+   ```bash
+   mkdir -p ~/.config/opencode/plugins
+   echo 'export { MemxPlugin } from "/path/to/opencode-memx/src/index";' > ~/.config/opencode/plugins/opencode-memx.ts
+   ```
 
-## 配置
+3. 声明依赖（若 `~/.config/opencode/package.json` 不存在）：
+   ```json
+   { "dependencies": { "zod": "^4.4.3", "@opencode-ai/plugin": "^1.18.11" } }
+   ```
 
-通过 `pluginConfig.opencode-memx` 自定义插件行为：
+4. 重启 OpenCode，`/status` 应显示 `opencode-memx`。
+
+### 配置
+
+通过 `~/.opencode/memx.config.json` 自定义：
 
 | 字段 | 类型 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `refinementModel` | `string` | 默认模型 | 提炼阶段使用的模型，如 `"deepseek-v4-flash"`。不传则使用 OpenCode 默认模型 |
-| `maxBufferSize` | `number` | `20` | 单会话信号缓冲区上限 |
-| `maxLineLimit` | `number` | `200` | USER.md 行数上限，超限自动压缩 |
-| `temperature` | `number` | `0.2` | LLM 温度参数 |
-| `maxTokens` | `number` | `1024` | 单次提炼最大 token 数 |
-
-示例：
-
-```json
-{
-  "pluginConfig": {
-    "opencode-memx": {
-      "refinementModel": "deepseek-v4-flash"
-    }
-  }
-}
-```
+| `refinementModel` | `string` | `deepseek/deepseek-chat-v4-flash` | 提炼模型（`provider/model` 格式） |
+| `maxSignalsPerSession` | `number` | `20` | 信号缓冲区上限 |
+| `autoBackupCount` | `number` | `5` | 备份保留数 |
+| `throttleMinutes` | `number` | `10` | 提炼节流间隔（分钟） |
 
 ## USER.md 格式
 

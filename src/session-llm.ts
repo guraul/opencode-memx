@@ -37,10 +37,22 @@ export function createSessionLLMClient(
           body: promptBody,
         });
         const parts = res.data?.parts ?? res.parts ?? [];
-        return parts
+        const text = parts
           .filter((p: any) => p.type === "text")
           .map((p: any) => p.text ?? "")
           .join("");
+        try {
+          await client.app.log({
+            body: {
+              service: "memx",
+              level: "info",
+              message: `llm raw(${text.length}): ${text.slice(0, 400)}`,
+            },
+          });
+        } catch {
+          // logging must never escape
+        }
+        return text;
       } finally {
         if (childSessionID) {
           await client.session

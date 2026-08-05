@@ -18,7 +18,7 @@ Always run `typecheck` before committing — TypeScript strict mode catches easy
 - **Entry point**: `src/index.ts` exports `MemxPlugin` (V2 `Plugin` 函数)
 - **Hooks**: `event` (订阅 `session.idle`) + `tool.reflect` (手动触发) + `dispose`
 - **Install**: `~/.config/opencode/plugins/opencode-memx.ts` re-exports `MemxPlugin` from `src/index`
-- **Model override**: `~/.opencode/memx.config.json` 的 `refinementModel` 字段 (`provider/model` 格式). Default: `deepseek/deepseek-chat-v4-flash`
+- **Model override**: `~/.opencode/memx.config.json` 的 `refinementModel` 字段 (`provider/model` 格式). Default: `opencode/deepseek-v4-flash-free`
 - **LLM calls**: 子会话 `client.session.prompt`（非 `ctx.llm.chat`），见 `src/session-llm.ts`
 - **USER.md path**: `~/.opencode/USER.md` (hardcoded in `src/user-md.ts`)
 - **Backup rotation**: `writeUserMd` auto-backups before every write, keeps 5 versions

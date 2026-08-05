@@ -69,7 +69,7 @@ OpenCode V2 用户风格记忆插件。从对话历史中自动提炼跨会话�
 
 | 字段 | 类型 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `refinementModel` | `string` | `deepseek/deepseek-chat-v4-flash` | 提炼模型（`provider/model` 格式） |
+| `refinementModel` | `string` | `opencode/deepseek-v4-flash-free` | 提炼模型（`provider/model` 格式） |
 | `maxSignalsPerSession` | `number` | `20` | 信号缓冲区上限 |
 | `autoBackupCount` | `number` | `5` | 备份保留数 |
 | `throttleMinutes` | `number` | `10` | 提炼节流间隔（分钟） |

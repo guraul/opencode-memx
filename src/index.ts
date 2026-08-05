@@ -18,6 +18,11 @@ import { shouldRun, markRun } from "./throttle";
 
 const buffer = new SignalBuffer();
 const childSessionIDs = new Set<string>();
+let refinementInFlight = false;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 interface LastTurn {
   user: string;
@@ -61,46 +66,54 @@ async function runRefinement(client: any, _sessionID: string, force = false): Pr
   const config = await loadMemxConfig();
   if (!force && !shouldRun(config.throttleMinutes)) return "[memx] 节流中，跳过";
 
-  const signals = buffer.getAll();
-  const existingContent = readUserMd();
-  const llm: LLMClient = createSessionLLMClient(client, config.refinementModel, (id) => {
-    childSessionIDs.add(id);
-  });
-  const proposals = await refine(signals, llm, existingContent, config.refinementModel);
-
-  if (proposals.length === 0) {
-    markRun();
-    return "[memx] 无可提炼偏好";
+  if (refinementInFlight) {
+    if (!force) return "[memx] 提炼进行中，跳过";
+    while (refinementInFlight) await sleep(200);
   }
-
-  let content = existingContent;
-  for (const proposal of proposals) {
-    content = applyProposal(proposal, content);
-  }
-
-  if (isOverLimit(content)) {
-    backupUserMd();
-    const sections = parseUserMd(content);
-    content = serializeUserMd(sections);
-  }
-
-  writeUserMd(content);
-  markRun();
-  buffer.clear();
-
+  refinementInFlight = true;
   try {
-    await client.app.log({
-      body: {
-        service: "memx",
-        level: "info",
-        message: `Updated USER.md: ${proposals.length} items`,
-      },
+    markRun();
+    const signals = buffer.getAll();
+    const existingContent = readUserMd();
+    const llm: LLMClient = createSessionLLMClient(client, config.refinementModel, (id) => {
+      childSessionIDs.add(id);
     });
-  } catch {
-    // logging must never escape the hook
-  }
+    const proposals = await refine(signals, llm, existingContent, config.refinementModel);
 
-  return `[memx] 已写入 ${proposals.length} 条`;
+    if (proposals.length === 0) {
+      return "[memx] 无可提炼偏好";
+    }
+
+    let content = existingContent;
+    for (const proposal of proposals) {
+      content = applyProposal(proposal, content);
+    }
+
+    if (isOverLimit(content)) {
+      backupUserMd();
+      const sections = parseUserMd(content);
+      content = serializeUserMd(sections);
+    }
+
+    writeUserMd(content);
+    buffer.clear();
+
+    try {
+      await client.app.log({
+        body: {
+          service: "memx",
+          level: "info",
+          message: `Updated USER.md: ${proposals.length} items`,
+        },
+      });
+    } catch {
+      // logging must never escape the hook
+    }
+
+    return `[memx] 已写入 ${proposals.length} 条`;
+  } finally {
+    refinementInFlight = false;
+  }
 }
 
 export const MemxPlugin: Plugin = async ({ client }) => {
@@ -110,7 +123,7 @@ export const MemxPlugin: Plugin = async ({ client }) => {
       try {
         const sessionID = (event as any).properties.sessionID as string;
         if (childSessionIDs.has(sessionID)) {
-          childSessionIDs.delete(sessionID);
+          if (event.type === "session.deleted") childSessionIDs.delete(sessionID);
           return;
         }
 

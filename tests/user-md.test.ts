@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import {
   parseUserMd,
   serializeUserMd,
@@ -8,8 +8,21 @@ import {
   readUserMd,
   backupUserMd,
 } from "../src/user-md";
-import { existsSync, unlinkSync } from "fs";
+import { existsSync, unlinkSync, mkdirSync, rmSync } from "fs";
 import type { StyleProposal } from "../src/types";
+
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>();
+  return { ...actual, homedir: () => "/tmp/opencode-memx-test-home" };
+});
+
+beforeAll(() => {
+  mkdirSync("/tmp/opencode-memx-test-home/.opencode", { recursive: true });
+});
+
+afterAll(() => {
+  rmSync("/tmp/opencode-memx-test-home", { recursive: true, force: true });
+});
 
 const SAMPLE = `# User Profile & Style
 

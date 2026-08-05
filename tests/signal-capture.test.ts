@@ -172,7 +172,7 @@ describe("SignalBuffer", () => {
       buf.push({
         category: "communication",
         content: `signal ${i}`,
-        evidence: "test",
+        evidence: `test ${i}`,
         confidence: "medium",
         source: "explicit",
       });
@@ -203,19 +203,34 @@ describe("SignalBuffer", () => {
       {
         category: "communication",
         content: "a",
-        evidence: "test",
+        evidence: "evidence a",
         confidence: "high",
         source: "explicit",
       },
       {
         category: "toolchain",
         content: "b",
-        evidence: "test",
+        evidence: "evidence b",
         confidence: "medium",
         source: "explicit",
       },
     ];
     buf.pushAll(signals);
     expect(buf.length).toBe(2);
+  });
+
+  it("dedups signals with same evidence", () => {
+    const buf = new SignalBuffer();
+    const signal: StyleSignal = {
+      category: "communication",
+      content: "a",
+      evidence: "same",
+      confidence: "high",
+      source: "explicit",
+    };
+    buf.push(signal);
+    buf.push({ ...signal, content: "b" });
+    expect(buf.length).toBe(1);
+    expect(buf.getAll()[0]!.content).toBe("a");
   });
 });

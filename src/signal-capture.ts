@@ -107,6 +107,7 @@ export class SignalBuffer {
   private signals: StyleSignal[] = [];
 
   push(signal: StyleSignal): void {
+    if (this.signals.some((s) => s.evidence === signal.evidence)) return;
     if (this.signals.length >= MAX_BUFFER_SIZE) {
       this.signals.shift();
     }

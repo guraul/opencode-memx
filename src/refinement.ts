@@ -24,6 +24,16 @@ function buildUserMessage(signals: StyleSignal[], existingUserMd: string): strin
   return `现有风格信号:\n${signalLines}\n\n现有 USER.md 内容:\n${existingUserMd || "(空)"}\n\n请分析以上信号，判断哪些值得记录为长期偏好，输出 StyleProposal 数组。`;
 }
 
+function extractJson(raw: string): string {
+  const trimmed = raw.trim();
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) return fence[1]!.trim();
+  const start = trimmed.indexOf("[");
+  const end = trimmed.lastIndexOf("]");
+  if (start !== -1 && end > start) return trimmed.slice(start, end + 1);
+  return trimmed;
+}
+
 export async function refine(
   signals: StyleSignal[],
   llm: LLMClient,
@@ -54,7 +64,7 @@ export async function refine(
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(extractJson(raw));
   } catch {
     return [];
   }

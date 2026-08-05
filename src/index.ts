@@ -55,11 +55,11 @@ export function extractLastTurn(
   return { user: userText, assistant: assistantText };
 }
 
-async function runRefinement(client: any, _sessionID: string): Promise<string> {
+async function runRefinement(client: any, _sessionID: string, force = false): Promise<string> {
   if (buffer.length === 0) return "[memx] 无信号，跳过";
 
   const config = await loadMemxConfig();
-  if (!shouldRun(config.throttleMinutes)) return "[memx] 节流中，跳过";
+  if (!force && !shouldRun(config.throttleMinutes)) return "[memx] 节流中，跳过";
 
   const signals = buffer.getAll();
   const existingContent = readUserMd();
@@ -106,21 +106,24 @@ async function runRefinement(client: any, _sessionID: string): Promise<string> {
 export const MemxPlugin: Plugin = async ({ client }) => {
   return {
     event: async ({ event }) => {
-      if (event.type !== "session.idle") return;
+      if (event.type !== "session.idle" && event.type !== "session.deleted") return;
       try {
         const sessionID = (event as any).properties.sessionID as string;
         if (childSessionIDs.has(sessionID)) {
           childSessionIDs.delete(sessionID);
           return;
         }
-        const res = await client.session.messages({ path: { id: sessionID } });
-        const msgs = res.data ?? [];
-        const last = extractLastTurn(msgs);
-        if (last) {
-          const signals = captureSignals(last.user, last.assistant);
-          buffer.pushAll(signals);
+
+        if (event.type === "session.idle") {
+          const res = await client.session.messages({ path: { id: sessionID } });
+          const msgs = res.data ?? [];
+          const last = extractLastTurn(msgs);
+          if (last) {
+            const signals = captureSignals(last.user, last.assistant);
+            buffer.pushAll(signals);
+          }
         }
-        await runRefinement(client, sessionID);
+        await runRefinement(client, sessionID, event.type === "session.deleted");
         childSessionIDs.delete(sessionID);
       } catch (err) {
         try {
@@ -150,7 +153,7 @@ export const MemxPlugin: Plugin = async ({ client }) => {
               const signals = captureSignals(last.user, last.assistant);
               buffer.pushAll(signals);
             }
-            return await runRefinement(client, ctx.sessionID);
+            return await runRefinement(client, ctx.sessionID, true);
           } catch (err) {
             return `[memx] 失败: ${err}`;
           }
@@ -159,6 +162,11 @@ export const MemxPlugin: Plugin = async ({ client }) => {
     },
 
     dispose: async () => {
+      try {
+        await runRefinement(client, "", true);
+      } catch {
+        // flush on exit, never throw
+      }
       buffer.clear();
     },
   };

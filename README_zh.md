@@ -59,11 +59,23 @@ OpenCode V2 双轨记忆插件。从对话历史中自动提炼跨会话的用�
 
 ## 安装
 
-### 方式一：全局插件目录（推荐）
+### 快速安装
+
+```bash
+git clone https://github.com/guraul/opencode-memx.git
+cd opencode-memx
+bash install.sh
+```
+
+脚本会自动克隆到 `~/.config/opencode-memx`，安装 npm 依赖，创建插件入口，声明依赖，配置 `opencode.json` 的 `instructions`。完成后重启 OpenCode，`/status` 验证即可。
+
+### 手动安装
+
+如果你想逐步操作：
 
 1. 克隆仓库：
    ```bash
-   git clone <仓库地址> /path/to/opencode-memx
+   git clone https://github.com/guraul/opencode-memx.git /path/to/opencode-memx
    cd /path/to/opencode-memx
    npm install
    ```

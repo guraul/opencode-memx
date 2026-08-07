@@ -59,11 +59,23 @@ Both tracks share the same trigger pipeline (`session.idle` / `reflect`) but hav
 
 ## Installation
 
-### Global Plugin Directory (Recommended)
+### Quick Install
+
+```bash
+git clone https://github.com/guraul/opencode-memx.git
+cd opencode-memx
+bash install.sh
+```
+
+This clones the repo to `~/.config/opencode-memx`, installs npm dependencies, creates the plugin entry, declares dependencies, and configures `instructions` in `opencode.json`. Then just restart OpenCode and `/status` to verify.
+
+### Manual Install
+
+If you prefer to do it step by step:
 
 1. Clone the repo:
    ```bash
-   git clone <repo-url> /path/to/opencode-memx
+   git clone https://github.com/guraul/opencode-memx.git /path/to/opencode-memx
    cd /path/to/opencode-memx
    npm install
    ```

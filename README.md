@@ -68,7 +68,16 @@ OpenCode V2 用户风格记忆插件。从对话历史中自动提炼跨会话�
    { "dependencies": { "zod": "^4.4.3", "@opencode-ai/plugin": "^1.18.11" } }
    ```
 
-4. 重启 OpenCode，`/status` 应显示 `opencode-memx`。
+4. 在 `~/.config/opencode/opencode.json` 加 `instructions` 字段，让 USER.md + MEMORY.md 自动注入主 AI 的 system prompt：
+   ```json
+   {
+     "$schema": "https://opencode.ai/config.json",
+     "instructions": ["~/.opencode/USER.md", "~/.opencode/MEMORY.md"]
+   }
+   ```
+   如果已有其他配置，合并 `instructions` 字段即可。
+
+5. 重启 OpenCode，`/status` 应显示 `opencode-memx`。
 
 ### 配置
 
@@ -110,10 +119,55 @@ OpenCode V2 用户风格记忆插件。从对话历史中自动提炼跨会话�
 - 四个固定分类标题，不可新增
 - 硬限制 200 行，超限自动压缩
 
+## MEMORY.md 格式（Track 2 - 项目记忆）
+
+插件同时管理项目级记忆，索引文件位于 `~/.opencode/MEMORY.md`，具体记忆文件位于 `~/.opencode/projects/<slug>/.mem/*.md`。
+
+```
+~/.opencode/
+├── USER.md                    # Track 1: 全局用户风格
+├── MEMORY.md                  # Track 2: 项目记忆索引（按项目分节）
+└── projects/
+    └── <slug>/
+        └── .mem/
+            ├── project_auth_rewrite.md
+            ├── reference_grafana.md
+            └── feedback_testing.md
+```
+
+**MEMORY.md 索引格式**：
+```markdown
+## root-project-foo
+- [auth rewrite](~/.opencode/projects/root-project-foo/.mem/project_auth_rewrite.md) - auth middleware rewrite driven by compliance
+- [grafana dashboard](~/.opencode/projects/root-project-foo/.mem/reference_grafana.md) - grafana.internal/d/api-latency is oncall dashboard
+
+## root-project-bar
+- [loop scheduler](~/.opencode/projects/root-project-bar/.mem/project_loop_scheduler.md) - scheduler refactor in progress
+```
+
+**记忆文件格式**（带 frontmatter，feedback/project 强制 Why + How to apply）：
+```markdown
+---
+name: auth rewrite
+description: auth middleware rewrite driven by compliance
+type: project
+---
+Rewriting auth middleware for compliance.
+
+**Why:** Legal flagged session token storage.
+**How to apply:** Scope decisions favor compliance over ergonomics.
+```
+
+**四类记忆**：
+- `project`：进行中的工作、目标、事故（不可从代码推出）
+- `reference`：外部资源指针（Linear、grafana 等）
+- `feedback`：协作指导（纠正 + 确认）
+- `user`：用户角色、知识背景
+
 ## 命令
 
 ### `reflect`
-手动触发风格提炼（`session.idle` 未自动触发时使用）。
+手动触发风格 + 项目记忆提炼（`session.idle` 未自动触发时使用）。
 
 ## 故障排查
 

@@ -15,10 +15,16 @@ import {
 } from "./user-md";
 import { loadMemxConfig } from "./config";
 import { shouldRun, markRun } from "./throttle";
+import { MemorySignalBuffer, captureMemorySignals } from "./memory-capture";
+import { refineMemory } from "./memory-refinement";
+import { readMemoryIndex, writeMemoryIndex, applyMemoryProposal } from "./memory-md";
+import { deriveSlug } from "./memory-types";
 
 const buffer = new SignalBuffer();
+const memoryBuffer = new MemorySignalBuffer();
 const childSessionIDs = new Set<string>();
 let refinementInFlight = false;
+let currentSlug = "";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -116,7 +122,58 @@ async function runRefinement(client: any, _sessionID: string, force = false): Pr
   }
 }
 
-export const MemxPlugin: Plugin = async ({ client }) => {
+async function runMemoryRefinement(client: any, _sessionID: string, force = false): Promise<string> {
+  if (memoryBuffer.length === 0) return "[memx] 无记忆信号，跳过";
+
+  const config = await loadMemxConfig();
+  if (!force && !shouldRun(config.throttleMinutes)) return "[memx] 节流中，跳过";
+
+  if (refinementInFlight) {
+    if (!force) return "[memx] 提炼进行中，跳过";
+    while (refinementInFlight) await sleep(200);
+  }
+  refinementInFlight = true;
+  try {
+    markRun();
+    const signals = memoryBuffer.getAll();
+    const existingIndex = readMemoryIndex();
+    const llm: LLMClient = createSessionLLMClient(client, config.refinementModel, (id) => {
+      childSessionIDs.add(id);
+    });
+    const proposals = await refineMemory(signals, llm, existingIndex, config.refinementModel);
+
+    if (proposals.length === 0) {
+      return "[memx] 无可提炼记忆";
+    }
+
+    let indexContent = existingIndex;
+    for (const proposal of proposals) {
+      indexContent = applyMemoryProposal(proposal, indexContent, currentSlug);
+    }
+
+    writeMemoryIndex(indexContent);
+    memoryBuffer.clear();
+
+    try {
+      await client.app.log({
+        body: {
+          service: "memx",
+          level: "info",
+          message: `Updated MEMORY.md: ${proposals.length} items`,
+        },
+      });
+    } catch {
+      // logging must never escape the hook
+    }
+
+    return `[memx] 已写入 ${proposals.length} 条记忆`;
+  } finally {
+    refinementInFlight = false;
+  }
+}
+
+export const MemxPlugin: Plugin = async ({ client, directory }) => {
+  currentSlug = deriveSlug(directory ?? "");
   return {
     event: async ({ event }) => {
       if (event.type !== "session.idle" && event.type !== "session.deleted") return;
@@ -134,9 +191,12 @@ export const MemxPlugin: Plugin = async ({ client }) => {
           if (last) {
             const signals = captureSignals(last.user, last.assistant);
             buffer.pushAll(signals);
+            const memSignals = captureMemorySignals(last.assistant);
+            memoryBuffer.pushAll(memSignals);
           }
         }
         await runRefinement(client, sessionID, event.type === "session.deleted");
+        await runMemoryRefinement(client, sessionID, event.type === "session.deleted");
         childSessionIDs.delete(sessionID);
       } catch (err) {
         try {
@@ -155,7 +215,7 @@ export const MemxPlugin: Plugin = async ({ client }) => {
 
     tool: {
       reflect: tool({
-        description: "手动触发 User Style 提炼（当 session.idle 未触发时使用）",
+        description: "手动触发 User Style + Project Memory 提炼（当 session.idle 未触发时使用）",
         args: {},
         async execute(_args, ctx) {
           try {
@@ -165,8 +225,12 @@ export const MemxPlugin: Plugin = async ({ client }) => {
             if (last) {
               const signals = captureSignals(last.user, last.assistant);
               buffer.pushAll(signals);
+              const memSignals = captureMemorySignals(last.assistant);
+              memoryBuffer.pushAll(memSignals);
             }
-            return await runRefinement(client, ctx.sessionID, true);
+            const styleResult = await runRefinement(client, ctx.sessionID, true);
+            const memoryResult = await runMemoryRefinement(client, ctx.sessionID, true);
+            return `${styleResult} | ${memoryResult}`;
           } catch (err) {
             return `[memx] 失败: ${err}`;
           }
@@ -177,10 +241,12 @@ export const MemxPlugin: Plugin = async ({ client }) => {
     dispose: async () => {
       try {
         await runRefinement(client, "", true);
+        await runMemoryRefinement(client, "", true);
       } catch {
         // flush on exit, never throw
       }
       buffer.clear();
+      memoryBuffer.clear();
     },
   };
 };

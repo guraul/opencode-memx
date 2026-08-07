@@ -1,0 +1,144 @@
+import { describe, it, expect } from "vitest";
+import { deriveSlug, MemorySignalSchema, MemoryProposalSchema, MemoryProposalArraySchema } from "../src/memory-types";
+
+describe("deriveSlug", () => {
+  it("converts /root/project/foo to root-project-foo", () => {
+    expect(deriveSlug("/root/project/foo")).toBe("root-project-foo");
+  });
+
+  it("handles single-level path /foo", () => {
+    expect(deriveSlug("/foo")).toBe("foo");
+  });
+
+  it("handles trailing slash", () => {
+    expect(deriveSlug("/root/project/foo/")).toBe("root-project-foo");
+  });
+});
+
+describe("MemorySignalSchema", () => {
+  const validSignal = {
+    type: "project",
+    name: "auth rewrite",
+    description: "auth middleware rewrite driven by legal/compliance",
+    content: "Rewriting auth middleware because legal flagged session token storage.",
+    why: "Compliance requirements, not tech debt",
+    how_to_apply: "Scope decisions favor compliance over ergonomics",
+    evidence: "user said legal flagged it",
+    confidence: "high",
+    source: "explicit",
+  };
+
+  it("accepts a valid project signal with why and how_to_apply", () => {
+    const result = MemorySignalSchema.safeParse(validSignal);
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects project signal without why", () => {
+    const { why, ...withoutWhy } = validSignal;
+    const result = MemorySignalSchema.safeParse(withoutWhy);
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts user signal without why or how_to_apply", () => {
+    const result = MemorySignalSchema.safeParse({
+      type: "user",
+      name: "user role",
+      description: "data scientist focused on observability",
+      content: "User is a data scientist.",
+      evidence: "user said so",
+      confidence: "high",
+      source: "explicit",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects invalid type", () => {
+    const result = MemorySignalSchema.safeParse({ ...validSignal, type: "invalid" });
+    expect(result.success).toBe(false);
+  });
+
+  it("strips unknown fields (Zod default behavior)", () => {
+    const result = MemorySignalSchema.safeParse({ ...validSignal, extra: "ignored" });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("MemoryProposalSchema", () => {
+  it("accepts valid append proposal", () => {
+    const result = MemoryProposalSchema.safeParse({
+      action: "append",
+      type: "project",
+      name: "auth rewrite",
+      description: "auth middleware rewrite",
+      content: "Rewriting auth middleware.",
+      why: "Compliance",
+      how_to_apply: "Favor compliance",
+      target_file: "project_auth_rewrite.md",
+      reason: "new project context",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts proposal with null why/how_to_apply (user/reference types)", () => {
+    const result = MemoryProposalSchema.safeParse({
+      action: "append",
+      type: "reference",
+      name: "grafana dashboard",
+      description: "grafana dashboard url",
+      content: "grafana.internal/d/api-latency",
+      why: null,
+      how_to_apply: null,
+      target_file: "reference_grafana.md",
+      reason: "new external resource",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects proposal missing target_file", () => {
+    const result = MemoryProposalSchema.safeParse({
+      action: "append",
+      type: "project",
+      name: "auth",
+      description: "desc",
+      content: "content",
+      reason: "r",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects proposal missing reason", () => {
+    const result = MemoryProposalSchema.safeParse({
+      action: "append",
+      type: "project",
+      name: "auth",
+      description: "desc",
+      content: "content",
+      target_file: "project_auth.md",
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("MemoryProposalArraySchema", () => {
+  it("accepts array of proposals", () => {
+    const result = MemoryProposalArraySchema.safeParse([
+      {
+        action: "append",
+        type: "project",
+        name: "auth rewrite",
+        description: "desc",
+        content: "content",
+        why: "compliance",
+        how_to_apply: "favor compliance",
+        target_file: "project_auth_rewrite.md",
+        reason: "new context",
+      },
+    ]);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts empty array", () => {
+    const result = MemoryProposalArraySchema.safeParse([]);
+    expect(result.success).toBe(true);
+  });
+});

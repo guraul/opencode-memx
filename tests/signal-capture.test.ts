@@ -44,104 +44,39 @@ Second comment: <!-- STYLE_SIGNAL: {"category": "toolchain", "content": "prefers
     expect(result).toHaveLength(0);
   });
 
-  it("detects explicit '以后都' keyword", () => {
-    const user = "以后都用 pnpm 安装依赖";
-    const ai = "好的";
+  it("parses confirmation source signal", () => {
+    const user = "yes exactly, keep doing that";
+    const ai = '<!-- STYLE_SIGNAL: {"category": "communication", "content": "terse responses with no trailing summaries", "evidence": "user confirmed terse style", "confidence": "high", "source": "confirmation"} -->';
     const result = captureSignals(user, ai);
-    expect(result.some((s) => s.source === "explicit")).toBe(true);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.source).toBe("confirmation");
   });
 
-  it("detects explicit '记住' keyword", () => {
-    const user = "记住，我不喜欢注释里的 Emoji";
-    const ai = "明白";
-    const result = captureSignals(user, ai);
-    expect(result.some((s) => s.source === "explicit")).toBe(true);
-  });
-
-  it("detects explicit '直接给' keyword", () => {
-    const user = "直接给完整的代码就行";
-    const ai = "好的";
-    const result = captureSignals(user, ai);
-    expect(result.some((s) => s.source === "explicit")).toBe(true);
-  });
-
-  it("detects '不用解释' as explicit preference", () => {
-    const user = "回答给结论，不用解释结论是怎么得出来的。";
-    const ai = "好的";
-    const result = captureSignals(user, ai);
-    expect(result.some((s) => s.source === "explicit")).toBe(true);
-  });
-
-  it("detects '先给' as explicit preference", () => {
-    const user = "以后先给结论";
-    const ai = "明白";
-    const result = captureSignals(user, ai);
-    expect(result.some((s) => s.source === "explicit")).toBe(true);
-  });
-
-  it("detects '别废话' as explicit preference", () => {
-    const user = "别废话，直接说重点";
-    const ai = "好的";
-    const result = captureSignals(user, ai);
-    expect(result.some((s) => s.source === "explicit")).toBe(true);
-  });
-
-  it("detects format feedback '不用解释'", () => {
-    const user = "不用解释推导过程";
-    const ai = "好的";
-    const result = captureSignals(user, ai);
-    expect(result.some((s) => s.source === "format_feedback")).toBe(true);
-  });
-
-  it("detects format feedback '不要表格'", () => {
-    const user = "不要表格，用列表就行";
-    const ai = "好的";
-    const result = captureSignals(user, ai);
-    expect(result.some((s) => s.source === "format_feedback")).toBe(true);
-  });
-
-  it("detects format feedback '别用 Emoji'", () => {
-    const user = "别用 Emoji";
-    const ai = "好的";
-    const result = captureSignals(user, ai);
-    expect(result.some((s) => s.source === "format_feedback")).toBe(true);
-  });
-
-  it("combines signals from both STYLE_SIGNAL and explicit keyword", () => {
-    const user = "以后都用 pnpm";
-    const ai = 'Sure.\n<!-- STYLE_SIGNAL: {"category": "architecture", "content": "likes Vue", "evidence": "uses Vue", "confidence": "high", "source": "explicit"} -->';
-    const result = captureSignals(user, ai);
-    expect(result.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("infers category 'toolchain' for tool-related explicit keywords", () => {
-    const user = "以后都用 pnpm 吧";
+  it("ignores user message content - only parses AI message signals", () => {
+    const user = "以后都用 pnpm 记住 我喜欢 别废话";
     const ai = "ok";
     const result = captureSignals(user, ai);
-    const toolSignals = result.filter(
-      (s) => s.source === "explicit" && s.category === "toolchain",
-    );
-    expect(toolSignals.length).toBeGreaterThanOrEqual(1);
+    expect(result).toHaveLength(0);
   });
 
-  it("infers category 'pitfall' for negative preference", () => {
-    const user = "别这样太啰嗦了";
-    const ai = "好的";
-    const result = captureSignals(user, ai);
-    const pitSignals = result.filter(
-      (s) => s.source === "explicit" && s.category === "pitfall",
-    );
-    expect(pitSignals.length).toBeGreaterThanOrEqual(1);
+  it("parses depth_signal source signal", () => {
+    const ai = '<!-- STYLE_SIGNAL: {"category": "toolchain", "content": "always uses pnpm", "evidence": "user picked pnpm in 3 consecutive sessions", "confidence": "medium", "source": "depth_signal"} -->';
+    const result = captureSignals("", ai);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.source).toBe("depth_signal");
   });
 
-  it("infers category 'communication' as fallback", () => {
-    const user = "我喜欢简洁的回答";
-    const ai = "好的";
-    const result = captureSignals(user, ai);
-    const commSignals = result.filter(
-      (s) => s.source === "explicit" && s.category === "communication",
-    );
-    expect(commSignals.length).toBeGreaterThanOrEqual(1);
+  it("parses format_feedback source signal", () => {
+    const ai = '<!-- STYLE_SIGNAL: {"category": "communication", "content": "no tables, use lists", "evidence": "user said 不要表格用列表", "confidence": "high", "source": "format_feedback"} -->';
+    const result = captureSignals("", ai);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.source).toBe("format_feedback");
+  });
+
+  it("ignores signals with extra unknown fields gracefully (Zod strips)", () => {
+    const ai = '<!-- STYLE_SIGNAL: {"category": "communication", "content": "concise", "evidence": "said so", "confidence": "high", "source": "explicit", "extra": "ignored"} -->';
+    const result = captureSignals("", ai);
+    expect(result).toHaveLength(1);
   });
 });
 
@@ -212,7 +147,7 @@ describe("SignalBuffer", () => {
         content: "b",
         evidence: "evidence b",
         confidence: "medium",
-        source: "explicit",
+        source: "confirmation",
       },
     ];
     buf.pushAll(signals);

@@ -3,7 +3,7 @@ import { z } from "zod";
 export const CATEGORIES = ["communication", "toolchain", "architecture", "pitfall"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
-export const SOURCES = ["explicit", "implicit_correction", "format_feedback", "depth_signal"] as const;
+export const SOURCES = ["explicit", "implicit_correction", "format_feedback", "depth_signal", "confirmation"] as const;
 export type SignalSource = (typeof SOURCES)[number];
 
 export const CONFIDENCES = ["high", "medium", "low"] as const;
@@ -38,7 +38,7 @@ export interface StyleProposal {
   action: Action;
   category: string;
   content: string;
-  target_line?: number | undefined;
+  target_line?: number | null | undefined;
   reason: string;
 }
 
@@ -68,8 +68,8 @@ export const StyleProposalSchema = z.object({
   action: z.enum(ACTIONS),
   category: z.enum(CATEGORIES),
   content: z.string().max(100),
-  target_line: z.number().int().positive().optional(),
-  reason: z.string().max(50),
+  target_line: z.number().int().positive().nullish(),
+  reason: z.string().max(200),
 });
 
 export const StyleProposalArraySchema = z.array(StyleProposalSchema);

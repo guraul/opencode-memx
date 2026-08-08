@@ -26,6 +26,7 @@ Always run `typecheck` before committing - TypeScript strict mode catches easy-t
 - **All hooks try-catched**: never let plugin errors reach the host
 - **LLM returns Zod-validated**: `StyleProposalArraySchema` in `src/types.ts` (Track 1) + `MemoryProposalArraySchema` in `src/memory-types.ts` (Track 2); `extractJson` strips markdown fences before parse
 - **Conflict handling**: when a new memory contradicts an existing one, LLM returns `deprecate` (old) + `append` (new, with `supersedes` field). Code writes `**Supersedes:**` audit line in new file, moves old file to `.mem/.trash/` (not physically deleted)
+- **Health check**: `runHealthCheck` runs after each memory refinement in `reflect` / `session.idle`. Detects dead links (index points to non-existent files) and orphan files (`.mem/*.md` not in index). Auto-fixes with guardrail: max 3 per run, logs as HTML comments in MEMORY.md, escalates bloat/conflicts to manual
 - **Concurrency guard**: `runRefinement` + `runMemoryRefinement` share mutex (`refinementInFlight`), `markRun()` fires BEFORE the LLM call - both prevent child-session storms / duplicate writes when idle events overlap
 - **Child-session guard**: `childSessionIDs` set; guard id is removed ONLY on `session.deleted` (not on idle - idle events can arrive after the deleted event)
 - **Diagnostics**: each refinement logs `llm raw(N): ...` (400-char truncation) via `client.app.log`
@@ -46,6 +47,7 @@ src/
   memory-md.ts         - read/write/parse MEMORY.md index + .mem/*.md files + backup
   memory-capture.ts    - MEMORY_SIGNAL HTML comment parser + MemorySignalBuffer (max 20, dedup by evidence)
   memory-refinement.ts - Track 2 LLM batch refinement + Zod validation
+  memory-health.ts     - Index health check (dead links, orphan files) + auto-fix with guardrails
   config.ts            - `~/.opencode/memx.config.json` load + Zod validation (shared)
   session-llm.ts       - LLMClient adapter via child session.prompt (shared)
   throttle.ts          - session.idle 节流（throttleMinutes, shared)

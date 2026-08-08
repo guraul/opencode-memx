@@ -19,6 +19,7 @@ import { MemorySignalBuffer, captureMemorySignals } from "./memory-capture";
 import { refineMemory } from "./memory-refinement";
 import { readMemoryIndex, writeMemoryIndex, applyMemoryProposal } from "./memory-md";
 import { deriveSlug } from "./memory-types";
+import { runHealthCheck, autoFix, formatHealthLog } from "./memory-health";
 
 const buffer = new SignalBuffer();
 const memoryBuffer = new MemorySignalBuffer();
@@ -154,19 +155,34 @@ async function runMemoryRefinement(client: any, _sessionID: string, force = fals
     writeMemoryIndex(indexContent);
     memoryBuffer.clear();
 
+    // Run health check + auto-fix (dead links, orphan files)
+    let healthMsg = "";
+    try {
+      const report = runHealthCheck(indexContent, currentSlug);
+      if (report.deadLinks.length > 0 || report.orphanFiles.length > 0 || report.escalated.length > 0) {
+        const { newIndex, logs } = autoFix(report, indexContent, currentSlug);
+        if (logs.length > 0) {
+          writeMemoryIndex(newIndex + "\n" + formatHealthLog(logs));
+          healthMsg = `, health: ${logs.length} fixes`;
+        }
+      }
+    } catch {
+      // health check must never block refinement
+    }
+
     try {
       await client.app.log({
         body: {
           service: "memx",
           level: "info",
-          message: `Updated MEMORY.md: ${proposals.length} items`,
+          message: `Updated MEMORY.md: ${proposals.length} items${healthMsg}`,
         },
       });
     } catch {
       // logging must never escape the hook
     }
 
-    return `[memx] 已写入 ${proposals.length} 条记忆`;
+    return `[memx] 已写入 ${proposals.length} 条记忆${healthMsg}`;
   } finally {
     refinementInFlight = false;
   }

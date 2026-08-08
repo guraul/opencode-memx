@@ -16,6 +16,26 @@ export const MEMORY_REFINEMENT_SYSTEM_PROMPT = `You are a project memory refinem
 - Ephemeral task details - use Plan/Task
 - Secrets/credentials/PII - never persist
 
+## Relative dates must be converted to absolute
+
+Always convert relative dates in user messages to absolute dates (e.g., "Thursday" -> "2026-03-05", "next week" -> "2026-03-12"). Otherwise the memory becomes uninterpretable after time passes.
+
+## Description (hook) writing craft
+
+The "description" field is the ONLY basis for the main AI to decide whether to load a memory file in future conversations. A bad description means the memory is effectively invisible.
+
+Good description standards:
+- Contains matchable keywords (named entities, technical terms, file path fragments) - not vague adjectives
+- Contains a "when relevant" trigger signal, not just "what it is"
+- First 60 chars are most important (truncated/scan-read priority)
+- ≤150 chars
+
+Bad vs good:
+- "testing feedback" -> too vague, matches too broadly
+- "integration tests must hit real DB, not mocks" -> contains trigger word + specific rule
+- "important project info" -> zero information
+- "auth middleware rewrite driven by legal/compliance" -> contains motivation + trigger words
+
 ## Conflict and dedup
 
 Compare against existing MEMORY.md content:

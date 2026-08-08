@@ -79,6 +79,37 @@ describe("MemoryProposalSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts proposal with supersedes field", () => {
+    const result = MemoryProposalSchema.safeParse({
+      action: "append",
+      type: "feedback",
+      name: "real DB required",
+      description: "integration tests must hit real DB",
+      content: "Use real DB not mocks.",
+      why: "Mock prod divergence",
+      how_to_apply: "All integration tests",
+      target_file: "feedback_real_db.md",
+      supersedes: "feedback_mock_db.md",
+      reason: "reverses previous guidance",
+    });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.supersedes).toBe("feedback_mock_db.md");
+  });
+
+  it("accepts proposal without supersedes (omitted)", () => {
+    const result = MemoryProposalSchema.safeParse({
+      action: "append",
+      type: "project",
+      name: "auth rewrite",
+      description: "desc",
+      content: "content",
+      target_file: "project_auth.md",
+      reason: "r",
+    });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.supersedes).toBeUndefined();
+  });
+
   it("accepts proposal with null why/how_to_apply (user/reference types)", () => {
     const result = MemoryProposalSchema.safeParse({
       action: "append",

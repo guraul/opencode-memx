@@ -2,7 +2,6 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, readdir
 import { join, basename } from "path";
 import { homedir } from "os";
 import type { MemoryProposal } from "./memory-types";
-
 export interface MemoryIndexSection {
   slug: string;
   entries: MemoryIndexEntry[];
@@ -23,6 +22,10 @@ export function getMemoryIndexPath(): string {
 
 export function getMemoryDir(slug: string): string {
   return join(homedir(), ".opencode", "projects", slug, ".mem");
+}
+
+function getTrashDir(slug: string): string {
+  return join(getMemoryDir(slug), ".trash");
 }
 
 export function getMemoryFilePath(slug: string, filename: string): string {
@@ -134,6 +137,10 @@ export function writeMemoryFile(slug: string, proposal: MemoryProposal): void {
   if (proposal.how_to_apply != null) {
     lines.push(`**How to apply:** ${proposal.how_to_apply}`);
   }
+  if (proposal.supersedes != null) {
+    const today = new Date().toISOString().split("T")[0] ?? "";
+    lines.push("", `**Supersedes:** ${proposal.supersedes} (reversed on ${today})`);
+  }
 
   writeFileSync(filePath, lines.join("\n") + "\n", "utf-8");
 }
@@ -178,6 +185,13 @@ export function applyMemoryProposal(proposal: MemoryProposal, existingIndex: str
       break;
     }
     case "deprecate": {
+      const targetPath = getMemoryFilePath(slug, proposal.target_file);
+      if (existsSync(targetPath)) {
+        const trashDir = getTrashDir(slug);
+        if (!existsSync(trashDir)) mkdirSync(trashDir, { recursive: true });
+        const trashPath = join(trashDir, `${proposal.target_file}.${Date.now()}`);
+        renameSync(targetPath, trashPath);
+      }
       section.entries = section.entries.filter((e) => e.filePath !== filePath);
       break;
     }

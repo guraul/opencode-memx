@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
-import { mkdirSync, rmSync, existsSync } from "fs";
+import { mkdirSync, rmSync, existsSync, readdirSync } from "fs";
 import {
   getMemoryIndexPath,
   getMemoryDir,
@@ -142,5 +142,76 @@ describe("applyMemoryProposal", () => {
     expect(newIndex).toContain("## root-project-test");
     expect(newIndex).toContain("project_merge_freeze.md");
     expect(existsSync(getMemoryFilePath(TEST_SLUG, "project_merge_freeze.md"))).toBe(true);
+  });
+});
+
+describe("Supersedes and .trash", () => {
+  it("writes Supersedes line when proposal has supersedes field", () => {
+    const proposal: MemoryProposal = {
+      action: "append",
+      type: "feedback",
+      name: "real DB required",
+      description: "integration tests must hit real DB",
+      content: "Use real DB not mocks.",
+      why: "Mock prod divergence",
+      how_to_apply: "All integration tests",
+      target_file: "feedback_real_db.md",
+      supersedes: "feedback_mock_db.md",
+      reason: "reverses previous guidance",
+    };
+    writeMemoryFile(TEST_SLUG, proposal);
+    const content = readMemoryFile(TEST_SLUG, "feedback_real_db.md");
+    expect(content).toContain("**Supersedes:** feedback_mock_db.md");
+  });
+
+  it("does not write Supersedes line when supersedes is null", () => {
+    const proposal: MemoryProposal = {
+      action: "append",
+      type: "project",
+      name: "auth rewrite",
+      description: "desc",
+      content: "content",
+      why: "compliance",
+      how_to_apply: "favor compliance",
+      target_file: "project_no_super.md",
+      reason: "r",
+    };
+    writeMemoryFile(TEST_SLUG, proposal);
+    const content = readMemoryFile(TEST_SLUG, "project_no_super.md");
+    expect(content).not.toContain("**Supersedes:**");
+  });
+
+  it("deprecate moves file to .trash and removes index entry", () => {
+    const appendProposal: MemoryProposal = {
+      action: "append",
+      type: "project",
+      name: "old context",
+      description: "old project context",
+      content: "This is old.",
+      why: "old reason",
+      how_to_apply: "old scope",
+      target_file: "project_old.md",
+      reason: "initial",
+    };
+    let index = applyMemoryProposal(appendProposal, "", TEST_SLUG);
+    expect(index).toContain("project_old.md");
+    expect(existsSync(getMemoryFilePath(TEST_SLUG, "project_old.md"))).toBe(true);
+
+    const deprecateProposal: MemoryProposal = {
+      action: "deprecate",
+      type: "project",
+      name: "old context",
+      description: "old project context",
+      content: "This is old.",
+      target_file: "project_old.md",
+      reason: "superseded by new context",
+    };
+    index = applyMemoryProposal(deprecateProposal, index, TEST_SLUG);
+    expect(index).not.toContain("project_old.md");
+    expect(existsSync(getMemoryFilePath(TEST_SLUG, "project_old.md"))).toBe(false);
+
+    const trashDir = `/tmp/opencode-memx-test-home/.opencode/projects/${TEST_SLUG}/.mem/.trash`;
+    const trashedFiles = readdirSync(trashDir);
+    expect(trashedFiles.some((f) => f.startsWith("project_old.md."))).toBe(true);
   });
 });

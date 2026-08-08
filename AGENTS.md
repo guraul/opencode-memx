@@ -25,6 +25,7 @@ Always run `typecheck` before committing - TypeScript strict mode catches easy-t
 - **Backup rotation**: `writeUserMd` / `writeMemoryIndex` auto-backups before every write, keeps 5 versions
 - **All hooks try-catched**: never let plugin errors reach the host
 - **LLM returns Zod-validated**: `StyleProposalArraySchema` in `src/types.ts` (Track 1) + `MemoryProposalArraySchema` in `src/memory-types.ts` (Track 2); `extractJson` strips markdown fences before parse
+- **Conflict handling**: when a new memory contradicts an existing one, LLM returns `deprecate` (old) + `append` (new, with `supersedes` field). Code writes `**Supersedes:**` audit line in new file, moves old file to `.mem/.trash/` (not physically deleted)
 - **Concurrency guard**: `runRefinement` + `runMemoryRefinement` share mutex (`refinementInFlight`), `markRun()` fires BEFORE the LLM call - both prevent child-session storms / duplicate writes when idle events overlap
 - **Child-session guard**: `childSessionIDs` set; guard id is removed ONLY on `session.deleted` (not on idle - idle events can arrive after the deleted event)
 - **Diagnostics**: each refinement logs `llm raw(N): ...` (400-char truncation) via `client.app.log`

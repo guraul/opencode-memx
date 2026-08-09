@@ -55,6 +55,7 @@ export const MemoryProposalSchema = z.object({
   how_to_apply: z.string().max(200).nullish(),
   target_file: z.string().max(80),
   supersedes: z.string().max(80).nullish(),
+  merges: z.string().max(200).nullish(),
   reason: z.string().max(200),
 });
 

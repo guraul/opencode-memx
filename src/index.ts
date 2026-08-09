@@ -17,7 +17,7 @@ import { loadMemxConfig } from "./config";
 import { shouldRun, markRun } from "./throttle";
 import { MemorySignalBuffer, captureMemorySignals } from "./memory-capture";
 import { refineMemory } from "./memory-refinement";
-import { readMemoryIndex, writeMemoryIndex, applyMemoryProposal } from "./memory-md";
+import { readMemoryIndex, writeMemoryIndex, applyMemoryProposal, forgetMemory } from "./memory-md";
 import { deriveSlug } from "./memory-types";
 import { runHealthCheck, autoFix, formatHealthLog } from "./memory-health";
 
@@ -249,6 +249,39 @@ export const MemxPlugin: Plugin = async ({ client, directory }) => {
             return `${styleResult} | ${memoryResult}`;
           } catch (err) {
             return `[memx] 失败: ${err}`;
+          }
+        },
+      }),
+
+      forget: tool({
+        description: "Forget project memories matching a keyword. Moves matching .mem/*.md files to .trash and removes their index entries. Use when user says 'forget/forget/remember to delete X'.",
+        args: {
+          keyword: tool.schema.string().describe("Search keyword to match memory title, hook, or filename"),
+        },
+        async execute(args, _ctx) {
+          try {
+            const keyword = args.keyword;
+            if (!keyword.trim()) return "[memx] forget: keyword is required";
+            const existingIndex = readMemoryIndex();
+            const { newIndex, removed } = forgetMemory(keyword, existingIndex, currentSlug);
+            if (removed.length === 0) {
+              return `[memx] forget: no memories matched "${keyword}"`;
+            }
+            writeMemoryIndex(newIndex);
+            try {
+              await client.app.log({
+                body: {
+                  service: "memx",
+                  level: "info",
+                  message: `Forgot ${removed.length} memories matching "${keyword}": ${removed.join(", ")}`,
+                },
+              });
+            } catch {
+              // logging must never escape
+            }
+            return `[memx] forgot ${removed.length} memories: ${removed.join(", ")}`;
+          } catch (err) {
+            return `[memx] forget failed: ${err}`;
           }
         },
       }),

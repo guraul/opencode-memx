@@ -141,6 +141,10 @@ export function writeMemoryFile(slug: string, proposal: MemoryProposal): void {
     const today = new Date().toISOString().split("T")[0] ?? "";
     lines.push("", `**Supersedes:** ${proposal.supersedes} (reversed on ${today})`);
   }
+  if (proposal.merges != null) {
+    const today = new Date().toISOString().split("T")[0] ?? "";
+    lines.push("", `**Merges:** ${proposal.merges} (merged on ${today})`);
+  }
 
   writeFileSync(filePath, lines.join("\n") + "\n", "utf-8");
 }
@@ -198,4 +202,39 @@ export function applyMemoryProposal(proposal: MemoryProposal, existingIndex: str
   }
 
   return serializeMemoryIndex(sections);
+}
+
+export function forgetMemory(keyword: string, indexContent: string, slug: string): { newIndex: string; removed: string[] } {
+  const sections = parseMemoryIndex(indexContent);
+  const section = sections.find((s) => s.slug === slug);
+  const removed: string[] = [];
+  if (!section) return { newIndex: indexContent, removed };
+
+  const lowerKeyword = keyword.toLowerCase();
+  const toRemove = section.entries.filter(
+    (e) =>
+      e.title.toLowerCase().includes(lowerKeyword) ||
+      e.hook.toLowerCase().includes(lowerKeyword) ||
+      e.filePath.toLowerCase().includes(lowerKeyword),
+  );
+
+  for (const entry of toRemove) {
+    const filename = extractFilename(entry.filePath);
+    const targetPath = getMemoryFilePath(slug, filename);
+    if (existsSync(targetPath)) {
+      const trashDir = join(getMemoryDir(slug), ".trash");
+      if (!existsSync(trashDir)) mkdirSync(trashDir, { recursive: true });
+      const trashPath = join(trashDir, `${filename}.${Date.now()}`);
+      renameSync(targetPath, trashPath);
+    }
+    removed.push(filename);
+  }
+
+  section.entries = section.entries.filter((e) => !toRemove.includes(e));
+  return { newIndex: serializeMemoryIndex(sections), removed };
+}
+
+function extractFilename(filePath: string): string {
+  const parts = filePath.split("/");
+  return parts[parts.length - 1] ?? "";
 }

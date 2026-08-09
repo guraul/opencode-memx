@@ -41,6 +41,7 @@ Bad vs good:
 Compare against existing MEMORY.md content:
 - Duplicate of existing entry -> action "update" with same target_file
 - Contradicts and supersedes existing -> action "deprecate" on old target_file + action "append" new. The "append" proposal MUST include "supersedes" field set to the old target_file name. Do NOT leave both - the old file is moved to .trash, the new file gets a \`**Supersedes:**\` audit line.
+- Merge multiple existing memories into one -> action "deprecate" the old ones + action "append" the merged entry. The "append" MUST include "merges" field listing the old filenames (comma-separated, e.g., "feedback_db.md,feedback_mock.md"). The new file gets a \`**Merges:**\` audit line.
 - Restates existing with no new info -> drop
 
 When you return a deprecate + append pair for a conflict, the append proposal's "supersedes" field links them. Example:
@@ -63,6 +64,7 @@ Schema for each element (strict):
   "how_to_apply": "required for feedback/project, null for user/reference",
   "target_file": "filename only, e.g. project_auth_rewrite.md, ≤80 chars",
   "supersedes": "old filename this replaces, e.g. feedback_mock_db.md; null/omit if not replacing",
+  "merges": "comma-separated old filenames merged into this, e.g. feedback_db.md,feedback_mock.md; null/omit if not merging",
   "reason": "≤200 chars, why this action"
 }
 
@@ -70,4 +72,5 @@ Rules:
 - "target_file": use type prefix convention: feedback_*.md, project_*.md, user_*.md, reference_*.md
 - "why" and "how_to_apply": REQUIRED for feedback/project types; set to null for user/reference
 - "supersedes": set ONLY when this proposal replaces an existing memory file; set to the old filename (e.g., "feedback_mock_db.md"). Omit or null otherwise.
+- "merges": set ONLY when this proposal merges multiple existing memories; comma-separated old filenames (e.g., "feedback_db.md,feedback_mock.md"). Omit or null otherwise.
 - Do NOT include "evidence", "confidence", or "source" fields - those are input-only`;

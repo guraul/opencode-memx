@@ -6,6 +6,13 @@ import { parseMemoryIndex, serializeMemoryIndex, getMemoryDir } from "./memory-m
 const MAX_AUTO_FIXES_PER_RUN = 3;
 const MEMORY_INDEX_MAX_LINES = 200;
 
+const TYPE_ORDER: Record<string, number> = {
+  user: 0,
+  feedback: 1,
+  project: 2,
+  reference: 3,
+};
+
 export interface HealthReport {
   deadLinks: DeadLink[];
   orphanFiles: OrphanFile[];
@@ -158,6 +165,17 @@ export function autoFix(report: HealthReport, indexContent: string, slug: string
     fixCount++;
   }
 
+  // Sort entries within each section by type (user -> feedback -> project -> reference)
+  for (const s of sections) {
+    s.entries.sort((a, b) => {
+      const typeA = readEntryType(a.filePath);
+      const typeB = readEntryType(b.filePath);
+      const orderA = TYPE_ORDER[typeA] ?? 99;
+      const orderB = TYPE_ORDER[typeB] ?? 99;
+      return orderA - orderB;
+    });
+  }
+
   // Escalations (no auto-fix, just log)
   for (const msg of report.escalated) {
     logs.push({
@@ -179,6 +197,18 @@ export function formatHealthLog(logs: AutoFixLog[]): string {
     return `<!-- ${today} auto-fix: ${log.action} ${log.target} - ${detail} -->`;
   });
   return lines.join("\n");
+}
+
+function readEntryType(filePath: string): string {
+  try {
+    const actualPath = resolveIndexPath(filePath);
+    if (!existsSync(actualPath)) return "unknown";
+    const content = readFileSync(actualPath, "utf-8");
+    const fm = parseFrontmatter(content);
+    return fm?.type ?? "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 function resolveIndexPath(filePath: string): string {
@@ -213,4 +243,40 @@ function parseFrontmatter(content: string): ParsedFrontmatter | null {
     description: descMatch[1]!.trim(),
     type: typeMatch[1]!.trim(),
   };
+}
+
+export function rebuildIndex(slug: string): string {
+  const memDir = getMemoryDir(slug);
+  if (!existsSync(memDir)) return "";
+
+  const entries: Array<{ filename: string; name: string; description: string; type: string }> = [];
+
+  const files = readdirSync(memDir)
+    .filter((f) => f.endsWith(".md") && !f.startsWith("."))
+    .sort();
+
+  for (const filename of files) {
+    const filePath = join(memDir, filename);
+    const content = readFileSync(filePath, "utf-8");
+    const fm = parseFrontmatter(content);
+    if (fm) {
+      entries.push({ filename, name: fm.name, description: fm.description, type: fm.type });
+    }
+  }
+
+  // Sort by type order (user -> feedback -> project -> reference)
+  entries.sort((a, b) => {
+    const orderA = TYPE_ORDER[a.type] ?? 99;
+    const orderB = TYPE_ORDER[b.type] ?? 99;
+    return orderA - orderB;
+  });
+
+  const indexPath = `~/.opencode/projects/${slug}/.mem`;
+  const lines: string[] = [`## ${slug}`];
+  for (const e of entries) {
+    lines.push(`- [${e.name}](${indexPath}/${e.filename}) - ${e.description}`);
+  }
+  lines.push("");
+
+  return lines.join("\n");
 }

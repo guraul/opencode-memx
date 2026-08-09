@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { mkdirSync, rmSync } from "fs";
-import { runHealthCheck, autoFix, formatHealthLog } from "../src/memory-health";
+import { runHealthCheck, autoFix, formatHealthLog, rebuildIndex } from "../src/memory-health";
 import { applyMemoryProposal } from "../src/memory-md";
 import type { MemoryProposal } from "../src/memory-types";
 
@@ -128,5 +128,53 @@ describe("formatHealthLog", () => {
 
   it("returns empty string for no logs", () => {
     expect(formatHealthLog([])).toBe("");
+  });
+});
+
+describe("rebuildIndex", () => {
+  it("rebuilds index from .mem frontmatter", () => {
+    const p1 = makeProposal("project_r1.md", "r1", "project r1 context");
+    const p2 = makeProposal("reference_r2.md", "r2", "reference r2 context");
+    const p3 = makeProposal("user_r3.md", "r3", "user r3 context");
+    applyMemoryProposal(p1, "", TEST_SLUG);
+    applyMemoryProposal(p2, "", TEST_SLUG);
+    applyMemoryProposal(p3, "", TEST_SLUG);
+
+    const rebuilt = rebuildIndex(TEST_SLUG);
+    expect(rebuilt).toContain(`## ${TEST_SLUG}`);
+    expect(rebuilt).toContain("project_r1.md");
+    expect(rebuilt).toContain("reference_r2.md");
+    expect(rebuilt).toContain("user_r3.md");
+  });
+
+  it("sorts by type order (user -> feedback -> project -> reference)", () => {
+    const p1 = makeProposal("project_sort.md", "p1", "project desc");
+    applyMemoryProposal(p1, "", TEST_SLUG);
+    const p2: MemoryProposal = {
+      action: "append",
+      type: "user",
+      name: "u1",
+      description: "user desc",
+      content: "user content",
+      target_file: "user_sort.md",
+      reason: "test",
+    };
+    applyMemoryProposal(p2, "", TEST_SLUG);
+
+    const rebuilt = rebuildIndex(TEST_SLUG);
+    const userIdx = rebuilt.indexOf("user_sort.md");
+    const projectIdx = rebuilt.indexOf("project_sort.md");
+    expect(userIdx).toBeLessThan(projectIdx);
+  });
+
+  it("returns empty string when .mem dir does not exist", () => {
+    expect(rebuildIndex("nonexistent-slug")).toBe("");
+  });
+
+  it("skips .trash files", () => {
+    const p = makeProposal("project_skip.md", "skip", "skip desc");
+    applyMemoryProposal(p, "", TEST_SLUG);
+    const rebuilt = rebuildIndex(TEST_SLUG);
+    expect(rebuilt).not.toContain(".trash");
   });
 });
